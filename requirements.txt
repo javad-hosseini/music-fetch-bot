@@ -1,0 +1,4 @@
+Pillow==10.3.0
+moviepy
+radiojavanapi
+telebot
