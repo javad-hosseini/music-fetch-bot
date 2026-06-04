@@ -14,3 +14,5 @@ Thumbs.db
 *.log
 
 .idea
+fetched_songs
+debug_song.py
