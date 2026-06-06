@@ -7,7 +7,6 @@ from radiojavanapi import Client
 
 from mutagen.id3 import ID3, TIT2, TPE1, TALB, APIC, USLT, TDRC
 from mutagen.mp3 import MP3
-
 from mutagen.mp4 import MP4, MP4Cover
 
 
@@ -61,7 +60,6 @@ def download_file(url: str, path: str, retries=3) -> None:
                 raise ValueError("❌ Download failed after multiple retries")
 
             print("🔁 Retrying...")
-
 
 
 def is_valid_mp3(path: str) -> bool:
@@ -151,24 +149,79 @@ def apply_m4a_metadata(path: str, song):
 
 
 # =====================
-# MAIN
+# DEBUG MODE
 # =====================
-def main():
-    url = input("RadioJavan URL: ").strip()
+def safe_get(obj, attr, default="N/A"):
+    return getattr(obj, attr, default)
 
-    print("⏳ Fetching metadata...")
+
+def debug_song(song):
+    print("\n================ SONG DEBUG ================")
+
+    print(f"🎵 TITLE      : {safe_get(song, 'title')}")
+    print(f"👤 ARTIST     : {safe_get(song, 'artist')}")
+    print(f"📌 NAME       : {safe_get(song, 'name')}")
+    print(f"💿 ALBUM      : {safe_get(song, 'album')}")
+    print(f"⏱ DURATION   : {safe_get(song, 'duration')} sec")
+    print(f"📅 CREATED    : {safe_get(song, 'created_at')}")
+
+    print(f"👍 LIKES      : {safe_get(song, 'likes')}")
+    print(f"👎 DISLIKES   : {safe_get(song, 'dislikes')}")
+    print(f"▶️ PLAYS      : {safe_get(song, 'plays')}")
+    print(f"⬇️ DOWNLOADS  : {safe_get(song, 'downloads')}")
+
+    print(f"🔗 SHARE LINK : {safe_get(song, 'share_link')}")
+    print(f"🎧 HQ LINK    : {safe_get(song, 'hq_link')}")
+    print(f"🔊 LQ LINK    : {safe_get(song, 'lq_link')}")
+    print(f"🌐 STREAM     : {safe_get(song, 'link')}")
+
+    print(f"🖼 PHOTO      : {safe_get(song, 'photo')}")
+    print(f"🖼 THUMBNAIL  : {safe_get(song, 'thumbnail')}")
+    print(f"🎬 PLAYER IMG : {safe_get(song, 'photo_player')}")
+
+    lyric = safe_get(song, 'lyric', "")
+    print("\n📝 LYRIC (preview):")
+    print(lyric if lyric else "No lyric available")
+
+    related = safe_get(song, 'related_songs', [])
+    # print(f"\n🎧 RELATED SONGS: {len(related) if related else 0}")
+    #
+    # print("===========================================\n")
+
+
+
+
+# =====================
+# MAIN LOGIC
+# =====================
+def handle_debug(url):
     song = client.get_song_by_url(url)
 
-    # Determine file extension
+    # print("\n=== RAW OBJECT ===")
+    # print(song)
+
+    print("\n=== CLEAN DEBUG OUTPUT ===")
+    debug_song(song)
+
+    # print("\n=== DICT (clean version) ===")
+    # try:
+    #     safe_data = make_json_safe(song)
+    #     print(json.dumps(safe_data, indent=4, ensure_ascii=False))
+    # except Exception as e:
+    #     print("Error converting to JSON:", e)
+
+
+def handle_download(url):
+    song = client.get_song_by_url(url)
+
     download_url = str(song.hq_link or song.lq_link)
-    print("Download URL:", download_url)
 
     if download_url.endswith(".mp3"):
         ext = ".mp3"
     elif download_url.endswith(".m4a"):
         ext = ".m4a"
     else:
-        raise ValueError("Unknown audio format from RadioJavan")
+        raise ValueError("Unknown audio format")
 
     artist = safe_name(song.artist)
     name = safe_name(song.name)
@@ -176,9 +229,8 @@ def main():
     audio_path = os.path.join(BASE_DIR, filename)
 
     print(f"📥 Downloading: {filename}")
-    download_file(download_url, audio_path)
+    download_file(download_url, audio_path, retries=3)
 
-    # Validate file
     if ext == ".mp3" and not is_valid_mp3(audio_path):
         raise ValueError("Downloaded file is NOT a valid MP3")
 
@@ -194,6 +246,47 @@ def main():
 
     print(f"✅ Saved to: {audio_path}")
 
+
+# =====================
+# CLI ENTRY
+# =====================
+def main():
+    parser = argparse.ArgumentParser(
+        description="RadioJavan Tool",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+
+    parser.add_argument("--debug", action="store_true", help="Show full metadata")
+    parser.add_argument("--download", action="store_true", help="Download the song")
+    parser.add_argument("--loop", action="store_true", help="Keep asking for URLs")
+
+    args = parser.parse_args()
+
+    # ============================
+    # If no arguments → show help
+    # ============================
+    if not any(vars(args).values()):
+        parser.print_help()
+        return
+
+    # ============================
+    # Normal execution
+    # ============================
+    while True:
+        url = input("\n🎧 Enter RadioJavan URL:\n> ").strip()
+
+        if args.debug:
+            handle_debug(url)
+
+        if args.download:
+            handle_download(url)
+
+        if not args.loop:
+            break
+
+        again = input("\n🔁 Download another? (y/n): ").strip().lower()
+        if again != "y":
+            break
 
 
 if __name__ == "__main__":
