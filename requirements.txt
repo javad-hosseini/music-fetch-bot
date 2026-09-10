@@ -1,4 +1,8 @@
-Pillow==10.3.0
-moviepy
-radiojavanapi
-telebot
+pyTelegramBotAPI>=4.20.0
+radiojavanapi>=0.6.1
+mutagen>=1.47.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+pydantic>=2.0.0
+yt-dlp>=2024.08.06
+spotipy>=2.24.0

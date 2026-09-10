@@ -1,18 +1,52 @@
-# Virtual environment
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+
+# Python cache & virtual environment
 venv/
-.env/
-
-# Python cache
+.venv/
+env/
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
 
-# OS files
-.DS_Store
-Thumbs.db
+# Media and downloads
+fetched_songs/
+downloads/
+temp/
+*.mp3
+*.m4a
+*.mp4
+*.wav
+*.ogg
+*.opus
+*.flac
+*.jpg
+*.jpeg
+*.png
+*.webp
 
 # Logs
 *.log
+logs/
 
-.idea
-fetched_songs
-debug_song.py
+# IDE, editor & OS files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# Autonomous agents, local hive & office files
+.agent/
+hive/
+.continue/
+roster-backups/
+roster*.json
