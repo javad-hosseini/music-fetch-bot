@@ -13,6 +13,24 @@ logging.basicConfig(
 logger = logging.getLogger("MusicBot")
 
 
+from telebot.types import BotCommand
+
+def setup_bot_commands(bot: TeleBot) -> None:
+    """Register native Telegram command menu."""
+    commands = [
+        BotCommand("start", "🚀 Start bot & main menu"),
+        BotCommand("help", "📖 User guide & commands"),
+        BotCommand("platforms", "🎵 Supported music links"),
+        BotCommand("ping", "⚡ Check latency & health"),
+        BotCommand("about", "ℹ️ About this bot"),
+    ]
+    try:
+        bot.set_my_commands(commands)
+        logger.info("Registered Telegram native bot commands.")
+    except Exception as e:
+        logger.warning(f"Could not register Telegram commands: {e}")
+
+
 def create_bot() -> TeleBot:
     """Initialize and configure the TeleBot instance."""
     if not config.BOT_TOKEN:
@@ -23,6 +41,7 @@ def create_bot() -> TeleBot:
 
     bot = TeleBot(config.BOT_TOKEN, parse_mode=None)
     register_handlers(bot)
+    setup_bot_commands(bot)
     return bot
 
 

@@ -155,47 +155,24 @@ All settings can be customized in `.env`:
 ### Option A: Via Python (All Platforms)
 
 ```bash
+# Start bot in production mode:
 python run.py
+
+# Run pre-flight system diagnostics:
+python run.py --check
+
+# Run with verbose debug logging:
+python run.py --verbose
 ```
 
-### Option B: Windows GUI Launcher
+### Option B: Windows Control Panel
 
-Double-click [`bot_launcher.bat`](./bot_launcher.bat) or run:
-```cmd
-bot_launcher.bat
-```
-The launcher automatically checks Python, activates `venv`, and runs the bot with colored status logs.
-
-### Option C: Production Background Service (Linux)
-
-You can run the bot in the background using `nohup`:
-```bash
-nohup python run.py > bot.log 2>&1 &
-```
-
-Or set up a `systemd` service:
-```ini
-# /etc/systemd/system/musicbot.service
-[Unit]
-Description=Telegram Music Downloader Bot
-After=network.target
-
-[Service]
-Type=simple
-User=your_user
-WorkingDirectory=/path/to/Radiojavan-dl
-ExecStart=/path/to/Radiojavan-dl/venv/bin/python run.py
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-Enable and start the service:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now musicbot
-```
+Double-click [`bot_launcher.bat`](./bot_launcher.bat) to open the interactive control menu:
+- `[1] Start Bot (Production)`
+- `[2] Run System Diagnostics (--check)`
+- `[3] Run Unit Tests (unittest)`
+- `[4] Install / Update Dependencies (pip)`
+- `[5] Exit`
 
 ---
 
@@ -254,7 +231,7 @@ Run the automated test suite using Python's built-in `unittest`:
 
 ```bash
 # Using virtual environment python:
-python -m unittest discover tests
+python -m unittest discover -s tests
 ```
 
 ---
@@ -265,9 +242,10 @@ python -m unittest discover tests
 Radiojavan-dl/
 ├── bot/
 │   ├── __init__.py
-│   ├── bot.py             # Bot initialization, timeouts & resilient polling loop
+│   ├── bot.py             # Bot initialization, command registration & polling loop
 │   ├── formatters.py      # HTML escaping, duration formatting & captions
-│   └── handlers.py        # Message handlers, downloads & upload flow
+│   ├── handlers.py        # Message & callback query handlers
+│   └── keyboards.py       # Inline keyboard builders (Main menu, platforms, actions)
 ├── services/
 │   ├── __init__.py        # Active services registry & provider lookup
 │   ├── base.py            # Abstract BaseMusicService & TrackInfo dataclass
@@ -275,17 +253,19 @@ Radiojavan-dl/
 │   ├── soundcloud.py      # SoundCloud progressive & HLS audio provider
 │   └── spotify.py         # Spotify metadata & audio-matching provider
 ├── tests/
-│   └── test_services.py   # Unit tests for URL matching & service routing
+│   ├── test_services.py   # Unit tests for URL matching & service routing
+│   └── test_ui_and_keyboards.py  # Unit tests for keyboards & command palette
 ├── utils/
 │   ├── __init__.py
 │   ├── audio.py           # Mutagen ID3v2 & MP4 tagger with artwork embedding
 │   ├── downloader.py      # Streaming chunk downloader with progress updates
 │   └── filesystem.py      # Filename sanitization & temporary workspaces
 ├── docs/
-│   └── platform_expansion_spotify_soundcloud.md  # Architectural research
+│   ├── platform_expansion_spotify_soundcloud.md  # Architectural research
+│   └── ui_ux_enhancements_guide.md               # UI/UX & CLI blueprint
 ├── config.py              # Centralized environment configuration
-├── run.py                 # Main entry point
-├── bot_launcher.bat       # Windows batch script launcher
+├── run.py                 # Main entry point with CLI diagnostics & banner
+├── bot_launcher.bat       # Windows interactive control panel
 ├── .env.example           # Environment template
 ├── requirements.txt       # Python package dependencies
 ├── .gitignore             # Git exclusions
