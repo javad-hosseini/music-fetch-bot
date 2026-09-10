@@ -2,14 +2,15 @@ import os
 import re
 import time
 import logging
+from pathlib import Path
 from telebot import TeleBot
 from telebot.types import Message, CallbackQuery
 
 import config
 from services import find_service, SERVICES
 from utils.filesystem import safe_filename, temporary_work_dir
-from utils.audio import apply_metadata
-from bot.formatters import format_caption, format_progress_bar
+from utils.audio import apply_mp3_metadata, convert_to_mp3, ensure_mp3
+from bot.formatters import format_caption, format_progress_bar, get_service_badge
 from bot.keyboards import (
     main_menu_keyboard,
     platforms_menu_keyboard,
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 TEXT_START = (
     "👋 <b>Welcome to Music Downloader Bot!</b>\n\n"
     "Send me any music or podcast link from our supported platforms, and I'll download "
-    "it for you with full ID3 tags and high-resolution album artwork.\n\n"
+    "it for you as a universal <b>MP3</b> with full ID3 tags and high-resolution album artwork.\n\n"
     "📌 <b>Supported Services:</b>\n"
     "• <b>Radio Javan</b> (Songs & Podcasts)\n"
     "• <b>SoundCloud</b> (Tracks)\n"
@@ -48,7 +49,7 @@ TEXT_HELP = (
 
 TEXT_PLATFORMS = (
     "🎵 <b>Supported Music Platforms</b>\n\n"
-    "The bot currently supports 3 major music platforms:\n\n"
+    "The bot currently supports 3 major music platforms (all converted strictly to MP3):\n\n"
     "1. 📻 <b>Radio Javan</b> — Full song and podcast downloads with ID3v2 tags.\n"
     "2. ☁️ <b>SoundCloud</b> — Progressive & HLS streams with 500x500 album art.\n"
     "3. 🟢 <b>Spotify</b> — Official metadata & 640x640 artwork matched with audio.\n\n"
@@ -62,7 +63,7 @@ TEXT_PLAT_RJ = (
     "• Web Player: <code>https://play.radiojavan.com/song/Artist-Track</code>\n"
     "• Podcasts: <code>https://www.radiojavan.com/podcasts/podcast/Episode</code>\n"
     "• Shortlinks: <code>https://rj.app/m/abcdef</code>\n\n"
-    "✨ <i>Includes lyrics (when available) and high-resolution cover art.</i>"
+    "✨ <i>Output: Strict 320/192kbps MP3 with lyrics & high-res artwork.</i>"
 )
 
 TEXT_PLAT_SC = (
@@ -71,7 +72,7 @@ TEXT_PLAT_SC = (
     "• Canonical: <code>https://soundcloud.com/artist/track-title</code>\n"
     "• Mobile: <code>https://m.soundcloud.com/artist/track-title</code>\n"
     "• Shortlinks: <code>https://on.soundcloud.com/abcdef</code>\n\n"
-    "✨ <i>Dynamic client ID extraction, 500x500 artwork, and progressive MP3 direct streaming.</i>"
+    "✨ <i>Output: Strict MP3 with dynamic client ID extraction & 500x500 artwork.</i>"
 )
 
 TEXT_PLAT_SP = (
@@ -81,12 +82,13 @@ TEXT_PLAT_SP = (
     "• Localized: <code>https://open.spotify.com/intl-de/track/...</code>\n"
     "• Shortlinks: <code>https://spotify.link/abcdef</code>\n"
     "• Spotify URIs: <code>spotify:track:4cOdK2wGLETKBW3PvgPWqT</code>\n\n"
-    "✨ <i>Official Spotify metadata & 640x640 artwork matched with high quality audio.</i>"
+    "✨ <i>Output: Strict MP3 with official metadata & 640x640 artwork.</i>"
 )
 
 TEXT_ABOUT = (
     "ℹ️ <b>About Music Downloader Bot</b>\n\n"
     "• <b>Version:</b> 1.1.0\n"
+    "• <b>Format:</b> Universal MP3 (ID3v2.3 tags)\n"
     "• <b>Framework:</b> Python 3 + pyTelegramBotAPI\n"
     "• <b>Audio Engine:</b> FFmpeg + Mutagen + yt-dlp\n"
     "• <b>License:</b> GNU General Public License v3.0\n\n"
@@ -102,6 +104,7 @@ def get_ping_text(latency_ms: int = 0) -> str:
         f"• <b>Response Latency:</b> {latency_ms} ms\n"
         f"• <b>Active Providers ({len(SERVICES)}):</b> {active_names}\n"
         f"• <b>FFmpeg Engine:</b> {ffmpeg_status}\n"
+        f"• <b>Format Guarantee:</b> Strictly MP3 (ID3v2.3)\n"
         f"• <b>Upload Limit:</b> 50 MB (Telegram API)\n"
         f"• <b>Status:</b> All systems operational 🚀"
     )
@@ -270,22 +273,25 @@ def register_handlers(bot: TeleBot) -> None:
         try:
             # 1. Fetch metadata and stream link
             track = service.fetch_track(raw_text)
+            badge = get_service_badge(track.source)
+
             bot.edit_message_text(
-                f"📥 <i>Found: {track.artist} - {track.title}</i>\n⏳ Starting download...",
+                f"📥 <b>[{badge}]</b> <i>{track.artist} - {track.title}</i>\n⏳ Starting download...",
                 message.chat.id,
                 status_msg.message_id,
                 parse_mode="HTML",
             )
 
-            # 2. Download in an isolated temporary directory
+            # 2. Download in an isolated temporary directory with universal .mp3 extension
             with temporary_work_dir() as work_dir:
-                filename = safe_filename(f"{track.artist} - {track.title}") + f".{track.format}"
+                filename = safe_filename(f"{track.artist} - {track.title}") + ".mp3"
                 file_path = work_dir / filename
 
                 def progress_callback(downloaded: int, total: int, percent: int):
-                    bar = format_progress_bar(percent)
+                    bar = format_progress_bar(percent, downloaded_bytes=downloaded, total_bytes=total)
                     try:
                         bot.edit_message_text(
+                            f"📥 <b>[{badge}]</b> <i>{track.artist} - {track.title}</i>\n"
                             f"⏳ <b>Downloading...</b>\n{bar}",
                             message.chat.id,
                             status_msg.message_id,
@@ -299,6 +305,24 @@ def register_handlers(bot: TeleBot) -> None:
                     file_path,
                     on_progress=progress_callback,
                 )
+
+                # Ensure target file exists and is strictly an MP3
+                if not file_path.exists():
+                    # Check if service saved as non-mp3 or different stem in work_dir
+                    candidates = list(work_dir.glob("*"))
+                    audio_candidates = [c for c in candidates if c.is_file() and c != file_path]
+                    if audio_candidates:
+                        chosen = audio_candidates[0]
+                        if chosen.suffix.lower() == ".mp3":
+                            chosen.rename(file_path)
+                        else:
+                            convert_to_mp3(chosen, file_path)
+                            chosen.unlink(missing_ok=True)
+                    else:
+                        raise RuntimeError(f"Downloaded file not found at {file_path}")
+
+                # Enforce universal MP3 audio format
+                file_path = ensure_mp3(file_path)
 
                 file_size = os.path.getsize(file_path)
 
@@ -320,10 +344,10 @@ def register_handlers(bot: TeleBot) -> None:
                     )
                     return
 
-                # 4. Apply metadata tags
+                # 4. Apply ID3v2 metadata tags
                 try:
                     bot.edit_message_text(
-                        "🏷 <i>Applying metadata & artwork...</i>",
+                        f"🏷 <i>Applying ID3 metadata & album artwork...</i>",
                         message.chat.id,
                         status_msg.message_id,
                         parse_mode="HTML",
@@ -331,12 +355,12 @@ def register_handlers(bot: TeleBot) -> None:
                 except Exception:
                     pass
 
-                apply_metadata(file_path, track)
+                apply_mp3_metadata(file_path, track)
 
                 # 5. Upload audio to Telegram
                 try:
                     bot.edit_message_text(
-                        "📤 <i>Uploading to Telegram...</i>",
+                        "📤 <i>Uploading MP3 to Telegram...</i>",
                         message.chat.id,
                         status_msg.message_id,
                         parse_mode="HTML",

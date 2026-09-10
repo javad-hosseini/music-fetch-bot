@@ -1,13 +1,17 @@
 import re
 import requests
-from typing import Optional
+from pathlib import Path
+from typing import Optional, Callable
 from radiojavanapi import Client
 from services.base import BaseMusicService, TrackInfo
+from utils.downloader import download_stream
+from utils.audio import convert_to_mp3
 
 
 class RadioJavanService(BaseMusicService):
     """
     Music service provider for Radio Javan (Songs and Podcasts).
+    Enforces universal MP3 output by auto-converting M4A streams to MP3.
     """
 
     def __init__(self):
@@ -58,7 +62,6 @@ class RadioJavanService(BaseMusicService):
         if not download_url:
             raise ValueError("No download stream found for this song.")
 
-        file_format = "m4a" if download_url.endswith(".m4a") else "mp3"
         created_at = getattr(song, "created_at", None)
         year = str(created_at)[:4] if created_at else None
 
@@ -72,7 +75,7 @@ class RadioJavanService(BaseMusicService):
             album=getattr(song, "album", None),
             duration=getattr(song, "duration", None),
             year=year,
-            format=file_format,
+            format="mp3",
             cover_url=str(song.photo) if getattr(song, "photo", None) else None,
             lyrics=getattr(song, "lyric", None),
             source="Radio Javan",
@@ -90,7 +93,6 @@ class RadioJavanService(BaseMusicService):
         if not download_url:
             raise ValueError("No download stream found for this podcast.")
 
-        file_format = "m4a" if download_url.endswith(".m4a") else "mp3"
         created_at = getattr(podcast, "created_at", None)
         year = str(created_at)[:4] if created_at else None
 
@@ -104,7 +106,7 @@ class RadioJavanService(BaseMusicService):
             album="Radio Javan Podcasts",
             duration=getattr(podcast, "duration", None),
             year=year,
-            format=file_format,
+            format="mp3",
             cover_url=str(podcast.photo) if getattr(podcast, "photo", None) else None,
             lyrics=None,
             source="Radio Javan Podcast",
@@ -112,3 +114,31 @@ class RadioJavanService(BaseMusicService):
             plays=getattr(podcast, "plays", None),
             likes=getattr(podcast, "likes", None),
         )
+
+    def download_track(
+        self,
+        track: TrackInfo,
+        target_path: Path,
+        on_progress: Optional[Callable[[int, int, int], None]] = None,
+    ) -> int:
+        """
+        Download Radio Javan track. If source stream is M4A, download and convert to MP3.
+        Always outputs a strict MP3 file at target_path.
+        """
+        is_m4a = ".m4a" in track.download_url.lower()
+
+        if is_m4a:
+            temp_m4a = target_path.with_suffix(".m4a")
+            try:
+                download_stream(track.download_url, temp_m4a, on_progress=on_progress)
+                # Convert downloaded M4A to target MP3
+                convert_to_mp3(temp_m4a, target_path)
+                return target_path.stat().st_size
+            finally:
+                if temp_m4a.exists():
+                    try:
+                        temp_m4a.unlink()
+                    except Exception:
+                        pass
+        else:
+            return download_stream(track.download_url, target_path, on_progress=on_progress)

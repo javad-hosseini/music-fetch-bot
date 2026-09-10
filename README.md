@@ -3,16 +3,19 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square)](./LICENSE)
 [![Telegram Bot API](https://img.shields.io/badge/Telegram-Bot%20API-0088cc.svg?style=flat-square&logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
-[![Platforms](https://img.shields.io/badge/Platforms-Radio%20Javan%20%7C%20SoundCloud%20%7C%20Spotify-brightgreen.svg?style=flat-square)](https://github.com/MhdiTaheri/Radiojavan-dl)
+[![Platforms](https://img.shields.io/badge/Platforms-Radio%20Javan%20%7C%20SoundCloud%20%7C%20Spotify-brightgreen.svg?style=flat-square)](https://github.com/javad-hosseini/music-fetch-bot)
+[![Audio Format: MP3](https://img.shields.io/badge/Audio-Universal%20MP3-orange.svg?style=flat-square)](https://github.com/javad-hosseini/music-fetch-bot)
 [![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg?style=flat-square)](https://github.com/psf/black)
 
-An extensible, high-performance Telegram bot that downloads songs, podcasts, and audio tracks from **Radio Javan**, **SoundCloud**, and **Spotify** with embedded ID3 metadata, high-resolution cover artwork, lyrics, and real-time visual progress tracking.
+An extensible, high-performance Telegram bot that downloads songs, podcasts, and audio tracks from **Radio Javan**, **SoundCloud**, and **Spotify** with guaranteed **universal MP3** conversion, embedded ID3 metadata, high-resolution cover artwork, lyrics, and an interactive inline UI with real-time visual progress tracking.
 
 ---
 
 ## 🌟 Highlights
 
 - **Multi-Platform Support**: Seamlessly parses and downloads tracks from Radio Javan, SoundCloud, and Spotify.
+- **Universal MP3 Output**: Enforces strict, guaranteed `.mp3` output format across all platforms using FFmpeg transcoding, embedded ID3v2.3 tags, and high-res cover art.
+- **Modern Telegram UI/UX**: Interactive inline menus, command suggestions (`/start`, `/help`, `/platforms`, `/ping`, `/about`), service badges, and quick-action links.
 - **High-Fidelity Audio Tagging**: Automatically embeds Title, Artist, Album, Year, Lyrics, and high-resolution cover artwork using [Mutagen](https://mutagen.readthedocs.io/).
 - **Zero-Credential Fallbacks**: Works out of the box with only your Telegram Bot Token! Uses dynamic client ID harvesting for SoundCloud and embed scraping for Spotify.
 - **Real-Time Visual Progress**: Interactive ASCII progress bar updates download status without triggering Telegram's `429 Too Many Requests` rate limits.
@@ -91,8 +94,8 @@ Using the bot is intuitive and requires zero special commands:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/MhdiTaheri/Radiojavan-dl.git
-cd Radiojavan-dl
+git clone https://github.com/javad-hosseini/music-fetch-bot.git
+cd music-fetch-bot
 ```
 
 ### 2. Create and Activate a Virtual Environment
@@ -239,7 +242,7 @@ python -m unittest discover -s tests
 ## 📁 Project Structure
 
 ```text
-Radiojavan-dl/
+music-fetch-bot/
 ├── bot/
 │   ├── __init__.py
 │   ├── bot.py             # Bot initialization, command registration & polling loop
@@ -254,10 +257,10 @@ Radiojavan-dl/
 │   └── spotify.py         # Spotify metadata & audio-matching provider
 ├── tests/
 │   ├── test_services.py   # Unit tests for URL matching & service routing
-│   └── test_ui_and_keyboards.py  # Unit tests for keyboards & command palette
+│   └── test_ui_and_mp3.py # Unit tests for UI, keyboards & MP3 format enforcement
 ├── utils/
 │   ├── __init__.py
-│   ├── audio.py           # Mutagen ID3v2 & MP4 tagger with artwork embedding
+│   ├── audio.py           # Mutagen ID3v2 tagger with artwork embedding & MP3 conversion
 │   ├── downloader.py      # Streaming chunk downloader with progress updates
 │   └── filesystem.py      # Filename sanitization & temporary workspaces
 ├── docs/

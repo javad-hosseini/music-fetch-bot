@@ -1,4 +1,6 @@
 import logging
+import shutil
+import subprocess
 import requests
 from pathlib import Path
 from typing import Optional
@@ -10,6 +12,56 @@ from services.base import TrackInfo
 import config
 
 logger = logging.getLogger(__name__)
+
+
+def convert_to_mp3(input_path: Path, output_path: Path, bitrate: str = "192k") -> Path:
+    """
+    Converts any audio file (M4A, AAC, OGG, WAV, etc.) to MP3 format using FFmpeg.
+    Guarantees universal MP3 output across all services.
+    """
+    ffmpeg_bin = config.FFMPEG_PATH or shutil.which("ffmpeg")
+    if not ffmpeg_bin:
+        raise RuntimeError("FFmpeg executable not found. Cannot perform MP3 audio conversion.")
+
+    cmd = [
+        ffmpeg_bin,
+        "-y",
+        "-i", str(input_path),
+        "-vn",
+        "-acodec", "libmp3lame",
+        "-b:a", bitrate,
+        str(output_path)
+    ]
+    result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        err_msg = result.stderr.strip() if result.stderr else "Unknown error"
+        raise RuntimeError(f"FFmpeg MP3 conversion failed: {err_msg}")
+
+    return output_path
+
+
+def ensure_mp3(file_path: Path, bitrate: str = "192k") -> Path:
+    """
+    Verifies that the file at file_path is a valid MP3 file.
+    If it is not an MP3 (e.g. M4A, AAC, Opus, OGG, or corrupt header),
+    it converts the file to MP3 format using FFmpeg and returns the verified MP3 path.
+    """
+    if file_path.suffix.lower() == ".mp3":
+        try:
+            MP3(file_path)
+            return file_path
+        except Exception:
+            logger.info(f"{file_path.name} lacks valid MP3 headers. Converting with FFmpeg...")
+
+    temp_mp3 = file_path.with_name(f"converted_{file_path.stem}.mp3")
+    convert_to_mp3(file_path, temp_mp3, bitrate=bitrate)
+
+    target_mp3 = file_path.with_suffix(".mp3")
+    if file_path.exists() and file_path != target_mp3:
+        file_path.unlink(missing_ok=True)
+    if temp_mp3.exists():
+        temp_mp3.replace(target_mp3)
+    return target_mp3
 
 
 def _fetch_cover(url: Optional[str]) -> Optional[bytes]:
@@ -97,12 +149,14 @@ def apply_m4a_metadata(file_path: Path, track: TrackInfo) -> None:
 
 
 def apply_metadata(file_path: Path, track: TrackInfo) -> None:
-    """Detect file extension and apply appropriate metadata tags."""
+    """Detect file extension and apply appropriate metadata tags (strictly ID3 for MP3)."""
     ext = file_path.suffix.lower()
     try:
         if ext == ".mp3":
             apply_mp3_metadata(file_path, track)
         elif ext in [".m4a", ".mp4"]:
             apply_m4a_metadata(file_path, track)
+        else:
+            apply_mp3_metadata(file_path, track)
     except Exception as e:
         logger.error(f"Failed to apply metadata to {file_path.name}: {e}")

@@ -3,6 +3,20 @@ from typing import Optional
 from services.base import TrackInfo
 
 
+def get_service_badge(source: Optional[str]) -> str:
+    """Return an attractive service badge for a given source platform."""
+    if not source:
+        return "🎵 Music"
+    lower = source.lower()
+    if "radio javan" in lower or "rj" in lower:
+        return "📻 Radio Javan"
+    elif "soundcloud" in lower:
+        return "☁️ SoundCloud"
+    elif "spotify" in lower:
+        return "🟢 Spotify"
+    return f"📡 {source}"
+
+
 def format_duration(seconds: Optional[int]) -> str:
     """Format duration in seconds to MM:SS or HH:MM:SS."""
     if not seconds or not isinstance(seconds, (int, float)):
@@ -15,25 +29,43 @@ def format_duration(seconds: Optional[int]) -> str:
     return f"{mins}:{secs:02d}"
 
 
-def format_progress_bar(percent: int, length: int = 10) -> str:
-    """Generate visual ASCII progress bar [████░░░░░░] 40%."""
-    percent = max(0, min(100, percent))
+def format_progress_bar(
+    percent: int,
+    length: int = 10,
+    downloaded_bytes: int = 0,
+    total_bytes: int = 0,
+) -> str:
+    """
+    Generate visual ASCII progress bar with size indicators:
+    [████░░░░░░] 40% • 6.2 MB / 15.5 MB
+    """
+    percent = max(0, min(100, int(percent)))
     filled_len = int(length * percent // 100)
     bar = "█" * filled_len + "░" * (length - filled_len)
-    return f"[{bar}] {percent}%"
+
+    if total_bytes > 0:
+        dl_mb = downloaded_bytes / (1024 * 1024)
+        tot_mb = total_bytes / (1024 * 1024)
+        return f"[{bar}] {percent}% • {dl_mb:.1f} / {tot_mb:.1f} MB"
+    elif downloaded_bytes > 0:
+        dl_mb = downloaded_bytes / (1024 * 1024)
+        return f"[{bar}] {percent}% • {dl_mb:.1f} MB"
+    else:
+        return f"[{bar}] {percent}%"
 
 
 def format_caption(track: TrackInfo) -> str:
     """
     Builds safe HTML caption for Telegram audio message.
-    Ensures all entities are escaped and the caption stays within 1024 characters.
+    Includes service badges, ID3 metadata fields, duration, and optional lyrics.
+    Ensures all entities are escaped and caption stays within Telegram's 1024 character limit.
     """
     title = html.escape(track.title or "Unknown")
     artist = html.escape(track.artist or "Unknown")
     album = html.escape(track.album or "Single")
     duration_str = format_duration(track.duration)
     year = html.escape(str(track.year or "N/A"))
-    source = html.escape(track.source or "Music Bot")
+    source_badge = get_service_badge(track.source)
 
     base_caption = (
         f"🎵 <b>{title}</b>\n"
@@ -41,7 +73,7 @@ def format_caption(track: TrackInfo) -> str:
         f"💿 <b>Album:</b> {album}\n"
         f"⏱ <b>Duration:</b> {duration_str}\n"
         f"📅 <b>Year:</b> {year}\n"
-        f"📡 <b>Source:</b> {source}\n"
+        f"📡 <b>Source:</b> {source_badge}\n"
     )
 
     if track.plays or track.likes:
@@ -55,7 +87,7 @@ def format_caption(track: TrackInfo) -> str:
     # Handle lyrics with length limits (keeping total caption < 1024 characters)
     if track.lyrics:
         current_len = len(base_caption)
-        # Allocate up to 350 characters for lyrics preview
+        # Allocate character budget for lyrics preview
         remaining_budget = max(0, 950 - current_len - 100)
         clean_lyrics = track.lyrics.strip()
         if len(clean_lyrics) > remaining_budget:
