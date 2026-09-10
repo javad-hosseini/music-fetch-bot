@@ -1,20 +1,261 @@
-# Telegram Music Downloader Bot 🎵
+# 🎵 Telegram Music Downloader Bot
 
-A modular, extensible Telegram bot for downloading music and podcasts with complete metadata (ID3v2 tags, high-resolution cover artwork, lyrics, and track information).
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square)](./LICENSE)
+[![Telegram Bot API](https://img.shields.io/badge/Telegram-Bot%20API-0088cc.svg?style=flat-square&logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
+[![Platforms](https://img.shields.io/badge/Platforms-Radio%20Javan%20%7C%20SoundCloud%20%7C%20Spotify-brightgreen.svg?style=flat-square)](https://github.com/MhdiTaheri/Radiojavan-dl)
+[![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg?style=flat-square)](https://github.com/psf/black)
 
-Currently supports **Radio Javan** (Songs and Podcasts), **SoundCloud** (Tracks), and **Spotify** (Tracks), designed with a pluggable architecture to easily add more services.
+An extensible, high-performance Telegram bot that downloads songs, podcasts, and audio tracks from **Radio Javan**, **SoundCloud**, and **Spotify** with embedded ID3 metadata, high-resolution cover artwork, lyrics, and real-time visual progress tracking.
 
 ---
 
-## 🚀 Features
+## 🌟 Highlights
 
-- **Multi-Platform Music Provider Architecture**: Modular providers for Radio Javan, SoundCloud, and Spotify extending `BaseMusicService`.
-- **High-Fidelity Audio Metadata & Artwork**: Embeds Title, Artist, Album, Year, Lyrics, and high-resolution Cover Art (supports MP3 and M4A).
-- **Zero-Credential Fallbacks**: Works out of the box with dynamic client ID harvesting (SoundCloud) and web embed extraction (Spotify) without mandatory API keys.
-- **Concurrency-Safe**: Each download executes in an isolated temporary workspace to prevent file collisions.
-- **Throttled Telegram Progress**: Prevents Telegram API 429 rate-limit errors by throttling status message edits.
-- **Telegram Size Safeguards**: Automatically validates the 50 MB bot API upload limit and provides direct streaming links when files exceed the limit.
-- **Resilient Polling**: Auto-reconnects on network drops.
+- **Multi-Platform Support**: Seamlessly parses and downloads tracks from Radio Javan, SoundCloud, and Spotify.
+- **High-Fidelity Audio Tagging**: Automatically embeds Title, Artist, Album, Year, Lyrics, and high-resolution cover artwork using [Mutagen](https://mutagen.readthedocs.io/).
+- **Zero-Credential Fallbacks**: Works out of the box with only your Telegram Bot Token! Uses dynamic client ID harvesting for SoundCloud and embed scraping for Spotify.
+- **Real-Time Visual Progress**: Interactive ASCII progress bar updates download status without triggering Telegram's `429 Too Many Requests` rate limits.
+- **Concurrency & Isolation**: Every download runs inside an isolated, self-cleaning temporary directory (`temporary_work_dir`), preventing race conditions and file collisions.
+- **Telegram Upload Safeguard**: Respects the Telegram Bot API 50 MB upload limit. If a mix or podcast exceeds 50 MB, the bot cleanly notifies the user with direct download links.
+- **Auto-Reconnecting Engine**: Resilient polling loop automatically recovers from network drops and transient Telegram API errors.
+
+---
+
+## 🎧 Supported Services & Link Formats
+
+| Service | Supported Content | Example Link Formats |
+| :--- | :--- | :--- |
+| **Radio Javan** | Songs & Podcasts | `https://www.radiojavan.com/mp3s/mp3/...`<br>`https://www.radiojavan.com/podcasts/podcast/...`<br>`https://rj.app/m/...` |
+| **SoundCloud** | Individual Tracks | `https://soundcloud.com/artist/track-name`<br>`https://m.soundcloud.com/artist/track-name`<br>`https://on.soundcloud.com/xyz123` |
+| **Spotify** | Tracks | `https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT`<br>`https://open.spotify.com/intl-de/track/...`<br>`https://spotify.link/...`<br>`spotify:track:...` |
+
+> [!NOTE]
+> Spotify audio is protected by DRM encryption. Similar to [spotDL](https://github.com/spotDL/spotify-downloader), this bot extracts official Spotify metadata and artwork, then matches and extracts the audio stream from high-quality sources via `yt-dlp`.
+
+---
+
+## 📱 How to Use the Bot
+
+Using the bot is intuitive and requires zero special commands:
+
+1. **Start the Bot**: Open your bot in Telegram and click **Start** (or send `/start`).
+2. **Send Any Link**: Simply paste a song, podcast, or track link into the chat.
+3. **Watch the Download**: The bot analyzes the link, fetches the track metadata, and displays a live progress bar:
+   ```text
+   ⏳ Downloading...
+   [████████░░] 80%
+   ```
+4. **Enjoy Your Music**: The bot sends you the MP3/M4A file with full tags, artwork, and an informative caption:
+   ```text
+   🎵 Blinding Lights
+   👤 Artist: The Weeknd
+   💿 Album: After Hours
+   ⏱ Duration: 03:20
+   📅 Year: 2020
+   📡 Source: Spotify
+   ```
+
+---
+
+## 📋 System Requirements
+
+- **Python**: Version `3.9` or higher.
+- **FFmpeg**: Required for audio transcoding and HLS stream assembly.
+
+### Installing FFmpeg
+
+- **Windows**:
+  ```powershell
+  winget install Gyan.FFmpeg
+  # Or with Chocolatey:
+  choco install ffmpeg
+  ```
+- **Ubuntu / Debian**:
+  ```bash
+  sudo apt update && sudo apt install -y ffmpeg
+  ```
+- **macOS** (Homebrew):
+  ```bash
+  brew install ffmpeg
+  ```
+- **Arch Linux**:
+  ```bash
+  sudo pacman -S ffmpeg
+  ```
+
+---
+
+## 🚀 Installation & Quick Start
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/MhdiTaheri/Radiojavan-dl.git
+cd Radiojavan-dl
+```
+
+### 2. Create and Activate a Virtual Environment
+
+- **Linux / macOS**:
+  ```bash
+  python3 -m venv venv
+  source venv/bin/activate
+  ```
+- **Windows (PowerShell)**:
+  ```powershell
+  python -m venv venv
+  .\venv\Scripts\Activate.ps1
+  ```
+- **Windows (Command Prompt)**:
+  ```cmd
+  python -m venv venv
+  .\venv\Scripts\activate.bat
+  ```
+
+### 3. Install Dependencies
+
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### 4. Configure Environment Variables
+
+Copy the example environment file:
+```bash
+cp .env.example .env
+```
+
+Open `.env` in your editor and enter your Telegram Bot Token obtained from [@BotFather](https://t.me/BotFather):
+```env
+BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ
+```
+
+---
+
+## ⚙️ Configuration Reference (`.env`)
+
+All settings can be customized in `.env`:
+
+| Variable | Required | Default | Description |
+| :--- | :---: | :---: | :--- |
+| `BOT_TOKEN` | **Yes** | — | Telegram Bot Token from [@BotFather](https://t.me/BotFather). |
+| `DOWNLOAD_DIR` | No | `downloads` | Directory used for temporary download sandboxes. |
+| `PROGRESS_UPDATE_INTERVAL`| No | `2.0` | Throttling interval (seconds) for editing progress messages. Prevents Telegram 429 rate limits. |
+| `SPOTIPY_CLIENT_ID` | No | *(empty)* | Optional Spotify Developer Client ID. If omitted, web scraping is used. |
+| `SPOTIPY_CLIENT_SECRET` | No | *(empty)* | Optional Spotify Developer Client Secret. |
+| `SOUNDCLOUD_CLIENT_ID` | No | *(empty)* | Optional SoundCloud API client ID. If omitted, dynamic harvesting is used. |
+| `FFMPEG_PATH` | No | *(auto)* | Custom path to `ffmpeg` executable. Defaults to system `PATH`. |
+
+---
+
+## ▶️ Running the Bot
+
+### Option A: Via Python (All Platforms)
+
+```bash
+python run.py
+```
+
+### Option B: Windows GUI Launcher
+
+Double-click [`bot_launcher.bat`](./bot_launcher.bat) or run:
+```cmd
+bot_launcher.bat
+```
+The launcher automatically checks Python, activates `venv`, and runs the bot with colored status logs.
+
+### Option C: Production Background Service (Linux)
+
+You can run the bot in the background using `nohup`:
+```bash
+nohup python run.py > bot.log 2>&1 &
+```
+
+Or set up a `systemd` service:
+```ini
+# /etc/systemd/system/musicbot.service
+[Unit]
+Description=Telegram Music Downloader Bot
+After=network.target
+
+[Service]
+Type=simple
+User=your_user
+WorkingDirectory=/path/to/Radiojavan-dl
+ExecStart=/path/to/Radiojavan-dl/venv/bin/python run.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+Enable and start the service:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now musicbot
+```
+
+---
+
+## 🏗️ Architecture & Adding New Music Services
+
+The codebase follows an extensible **Provider Pattern**. All music services implement the [`BaseMusicService`](./services/base.py) abstract base class:
+
+```text
+services/
+├── base.py            # Abstract BaseMusicService & TrackInfo model
+├── radiojavan.py      # RadioJavanService
+├── soundcloud.py      # SoundCloudService
+├── spotify.py         # SpotifyService
+└── __init__.py        # Registry & find_service() factory
+```
+
+### How to Add a New Music Service in 3 Steps:
+
+1. **Create your provider** in `services/your_service.py`:
+   ```python
+   from services.base import BaseMusicService, TrackInfo
+
+   class MyMusicService(BaseMusicService):
+       def can_handle(self, url: str) -> bool:
+           return "myservice.com" in url
+
+       def fetch_track(self, url: str) -> TrackInfo:
+           # Extract metadata and download URL
+           return TrackInfo(
+               title="Song Title",
+               artist="Artist Name",
+               download_url="https://...",
+               source="MyService",
+           )
+   ```
+
+2. **Register the service** in `services/__init__.py`:
+   ```python
+   from services.your_service import MyMusicService
+
+   SERVICES: List[BaseMusicService] = [
+       RadioJavanService(),
+       SoundCloudService(),
+       SpotifyService(),
+       MyMusicService(),  # <-- Added here
+   ]
+   ```
+
+3. That's it! The bot will now automatically route matching links to your new service.
+
+---
+
+## 🧪 Testing
+
+Run the automated test suite using Python's built-in `unittest`:
+
+```bash
+# Using virtual environment python:
+python -m unittest discover tests
+```
 
 ---
 
@@ -24,84 +265,65 @@ Currently supports **Radio Javan** (Songs and Podcasts), **SoundCloud** (Tracks)
 Radiojavan-dl/
 ├── bot/
 │   ├── __init__.py
-│   ├── bot.py             # Bot initialization, configuration & resilient runner
-│   ├── handlers.py        # Telegram command & message handlers
-│   └── formatters.py      # HTML entity escaping & caption/progress formatting
+│   ├── bot.py             # Bot initialization, timeouts & resilient polling loop
+│   ├── formatters.py      # HTML escaping, duration formatting & captions
+│   └── handlers.py        # Message handlers, downloads & upload flow
 ├── services/
-│   ├── __init__.py        # Provider registry & lookup
-│   ├── base.py            # Abstract BaseMusicService & TrackInfo model
-│   ├── radiojavan.py      # Radio Javan provider (Songs & Podcasts)
-│   ├── soundcloud.py      # SoundCloud provider (Progressive & HLS)
-│   └── spotify.py         # Spotify provider (Metadata + yt-dlp audio matching)
+│   ├── __init__.py        # Active services registry & provider lookup
+│   ├── base.py            # Abstract BaseMusicService & TrackInfo dataclass
+│   ├── radiojavan.py      # Radio Javan songs & podcasts provider
+│   ├── soundcloud.py      # SoundCloud progressive & HLS audio provider
+│   └── spotify.py         # Spotify metadata & audio-matching provider
 ├── tests/
-│   └── test_services.py   # Comprehensive service test suite
+│   └── test_services.py   # Unit tests for URL matching & service routing
 ├── utils/
 │   ├── __init__.py
-│   ├── audio.py           # Mutagen ID3/M4A metadata tagger
-│   ├── downloader.py      # Streamed HTTP downloader with throttled callbacks
-│   └── filesystem.py      # Filename sanitization & isolated temporary directories
-├── config.py              # Centralized environment settings
-├── run.py                 # Main bot entry point
-├── bot_launcher.bat       # Windows launcher
-├── .env.example           # Configuration template
-├── requirements.txt       # Project dependencies
-└── README.md
+│   ├── audio.py           # Mutagen ID3v2 & MP4 tagger with artwork embedding
+│   ├── downloader.py      # Streaming chunk downloader with progress updates
+│   └── filesystem.py      # Filename sanitization & temporary workspaces
+├── docs/
+│   └── platform_expansion_spotify_soundcloud.md  # Architectural research
+├── config.py              # Centralized environment configuration
+├── run.py                 # Main entry point
+├── bot_launcher.bat       # Windows batch script launcher
+├── .env.example           # Environment template
+├── requirements.txt       # Python package dependencies
+├── .gitignore             # Git exclusions
+└── README.md              # Project documentation
 ```
 
-
 ---
 
-## 🛠 Installation & Setup
+## ❓ Troubleshooting & FAQ
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/MhdiTaheri/Radiojavan-dl.git
-   cd Radiojavan-dl
-   ```
+<details>
+<summary><b>Q: Getting "FFmpeg not found" error during Spotify or SoundCloud downloads?</b></summary>
+Make sure FFmpeg is installed and added to your system's PATH. You can verify by opening a terminal and running <code>ffmpeg -version</code>. Alternatively, define <code>FFMPEG_PATH=/path/to/ffmpeg</code> directly in your <code>.env</code> file.
+</details>
 
-2. **Create and activate a virtual environment:**
-   ```bash
-   python -m venv venv
-   # On Windows (PowerShell):
-   .\venv\Scripts\Activate.ps1
-   # On Linux/macOS:
-   source venv/bin/activate
-   ```
+<details>
+<summary><b>Q: What happens if a podcast or track is larger than 50 MB?</b></summary>
+Telegram Bot API enforces a hard 50 MB file upload limit for standard bots. If a downloaded audio file exceeds 49.5 MB, the bot cleanly cancels the upload and sends a direct download link with a clear message explaining the file size limit.
+</details>
 
-3. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+<details>
+<summary><b>Q: Do I need Spotify API credentials?</b></summary>
+No! By default, the bot uses a zero-credential web embed extraction technique to obtain Spotify track metadata. Supplying <code>SPOTIPY_CLIENT_ID</code> and <code>SPOTIPY_CLIENT_SECRET</code> is completely optional and only needed if you prefer using the official Spotify Web API.
+</details>
 
-4. **Configure your bot token:**
-   Copy `.env.example` to `.env` and fill in your Telegram Bot Token:
-   ```bash
-   cp .env.example .env
-   ```
-   Edit `.env`:
-   ```env
-   BOT_TOKEN=your_bot_token_here
-   ```
-
----
-
-## ▶️ Running the Bot
-
-- **Via Python:**
-  ```bash
-  python run.py
-  ```
-
-- **On Windows (GUI Launcher):**
-  Double click `bot_launcher.bat`.
-
-- **Background execution on Linux:**
-  ```bash
-  nohup python run.py > bot.log 2>&1 &
-  ```
+<details>
+<summary><b>Q: Bot stops responding or crashes on disconnect?</b></summary>
+The bot features an auto-reconnecting loop in <code>bot/bot.py</code> that catches network dropouts and automatically attempts reconnection every 5 seconds.
+</details>
 
 ---
 
 ## 📄 License
 
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **GNU General Public License v3.0** - see the [LICENSE](./LICENSE) file for details.
+
+---
+
+## ⚠️ Disclaimer
+
+This tool is created for personal, educational, and backup purposes only. Please respect the intellectual property rights of artists and platforms. Users are responsible for ensuring they have the right to download and use any media obtained through this bot.
