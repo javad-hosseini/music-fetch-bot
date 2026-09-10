@@ -1,14 +1,19 @@
+from __future__ import annotations
+
 import logging
 import shutil
 import subprocess
 import requests
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from mutagen.id3 import ID3, TIT2, TPE1, TALB, APIC, USLT, TDRC, ID3NoHeaderError
 from mutagen.mp3 import MP3
 from mutagen.mp4 import MP4, MP4Cover
-from services.base import TrackInfo
+
+if TYPE_CHECKING:
+    from services.base import TrackInfo
+
 import config
 
 logger = logging.getLogger(__name__)
