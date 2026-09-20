@@ -43,9 +43,16 @@ class TestServices(unittest.TestCase):
             self.assertIsNotNone(service, f"Failed to match Spotify URL: {url}")
             self.assertIsInstance(service, SpotifyService)
 
-        # Unknown
+        # Unknown & SSRF injection attempt URLs (must be rejected)
         self.assertIsNone(find_service("https://youtube.com/watch?v=12345"))
         self.assertIsNone(find_service("https://example.com/audio.mp3"))
+        self.assertIsNone(find_service("http://169.254.169.254/latest/meta-data/#radiojavan.com"))
+        self.assertIsNone(find_service("http://attacker.com/evil?ref=radiojavan.com"))
+        self.assertIsNone(find_service("http://radiojavan.com.attacker.com/path"))
+        self.assertIsNone(find_service("http://attacker.com/soundcloud.com/exploit"))
+        self.assertIsNone(find_service("http://127.0.0.1:8080/on.soundcloud.com"))
+        self.assertIsNone(find_service("http://evil.com/page?track=spotify.com"))
+        self.assertIsNone(find_service("http://spotify.link.evil.com/steal"))
 
     def test_spotify_extract_track_id(self):
         service = SpotifyService()

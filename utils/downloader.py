@@ -10,14 +10,16 @@ def download_stream(
     target_path: Path,
     on_progress: Optional[Callable[[int, int, int], None]] = None,
     interval: float = config.PROGRESS_UPDATE_INTERVAL,
+    max_bytes: Optional[int] = config.MAX_AUDIO_BYTES,
 ) -> int:
     """
-    Downloads a file with streaming and throttled progress reporting.
+    Downloads a file with streaming, size guards, and throttled progress reporting.
 
     :param url: File download URL.
     :param target_path: Path to write the downloaded file.
     :param on_progress: Optional callback function with signature (downloaded_bytes, total_bytes, percent).
     :param interval: Minimum time in seconds between progress callback invocations.
+    :param max_bytes: Maximum allowed bytes to download before aborting (prevents disk-fill DoS).
     :return: Total downloaded bytes.
     """
     headers = {
@@ -32,6 +34,11 @@ def download_stream(
         response.raise_for_status()
 
         total_size = int(response.headers.get("content-length", 0))
+        if max_bytes and total_size > max_bytes:
+            raise ValueError(
+                f"File size ({total_size / (1024 * 1024):.1f} MB) exceeds maximum allowed limit of {max_bytes / (1024 * 1024):.1f} MB."
+            )
+
         downloaded = 0
         last_callback_time = 0.0
 
@@ -40,6 +47,11 @@ def download_stream(
                 if chunk:
                     f.write(chunk)
                     downloaded += len(chunk)
+
+                    if max_bytes and downloaded > max_bytes:
+                        raise ValueError(
+                            f"Download exceeded maximum allowed limit of {max_bytes / (1024 * 1024):.1f} MB."
+                        )
 
                     now = time.time()
                     if on_progress and (now - last_callback_time >= interval):

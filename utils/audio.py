@@ -19,10 +19,11 @@ import config
 logger = logging.getLogger(__name__)
 
 
-def convert_to_mp3(input_path: Path, output_path: Path, bitrate: str = "192k") -> Path:
+def convert_to_mp3(input_path: Path, output_path: Path, bitrate: str = "192k", timeout: int = 180) -> Path:
     """
     Converts any audio file (M4A, AAC, OGG, WAV, etc.) to MP3 format using FFmpeg.
     Guarantees universal MP3 output across all services.
+    Includes process timeout protection against infinite conversion hangs.
     """
     ffmpeg_bin = config.FFMPEG_PATH or shutil.which("ffmpeg")
     if not ffmpeg_bin:
@@ -37,7 +38,11 @@ def convert_to_mp3(input_path: Path, output_path: Path, bitrate: str = "192k") -
         "-b:a", bitrate,
         str(output_path)
     ]
-    result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    try:
+        result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"FFmpeg conversion timed out after {timeout} seconds.")
+
     if result.returncode != 0:
         err_msg = result.stderr.strip() if result.stderr else "Unknown error"
         raise RuntimeError(f"FFmpeg MP3 conversion failed: {err_msg}")

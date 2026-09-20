@@ -1,7 +1,9 @@
 import os
 import re
 import time
+import html
 import logging
+import threading
 from pathlib import Path
 from telebot import TeleBot
 from telebot.types import Message, CallbackQuery
@@ -22,6 +24,9 @@ from bot.keyboards import (
 )
 
 logger = logging.getLogger(__name__)
+
+_active_downloads = set()
+_active_downloads_lock = threading.Lock()
 
 TEXT_START = (
     "👋 <b>Welcome to Music Downloader Bot!</b>\n\n"
@@ -254,153 +259,181 @@ def register_handlers(bot: TeleBot) -> None:
     # 3. Music link processor
     @bot.message_handler(func=lambda msg: msg.text and bool(re.search(r"https?://|spotify:track:", msg.text)))
     def handle_music_link(message: Message):
-        raw_text = message.text.strip()
-        service = find_service(raw_text)
+        user_id = message.from_user.id if message.from_user else message.chat.id
 
-        if not service:
-            # Unrecognized service link
-            bot.reply_to(
-                message,
-                "⚠️ <b>Unrecognized Music Link!</b>\n\n"
-                "Please send a valid link from <b>Radio Javan</b>, <b>SoundCloud</b>, or <b>Spotify</b>.",
-                parse_mode="HTML",
-                reply_markup=error_keyboard(),
-            )
-            return
-
-        status_msg = bot.send_message(message.chat.id, "🔍 <i>Analyzing link...</i>", parse_mode="HTML")
+        # Prevent duplicate concurrent downloads per user
+        with _active_downloads_lock:
+            if user_id in _active_downloads:
+                bot.reply_to(
+                    message,
+                    "⏳ <b>Download in progress!</b>\n\n"
+                    "You already have an active download in progress. Please wait for it to complete.",
+                    parse_mode="HTML",
+                )
+                return
+            _active_downloads.add(user_id)
 
         try:
-            # 1. Fetch metadata and stream link
-            track = service.fetch_track(raw_text)
-            badge = get_service_badge(track.source)
+            raw_text = message.text.strip()
+            service = find_service(raw_text)
 
-            bot.edit_message_text(
-                f"📥 <b>[{badge}]</b> <i>{track.artist} - {track.title}</i>\n⏳ Starting download...",
-                message.chat.id,
-                status_msg.message_id,
-                parse_mode="HTML",
-            )
+            if not service:
+                # Unrecognized service link
+                bot.reply_to(
+                    message,
+                    "⚠️ <b>Unrecognized Music Link!</b>\n\n"
+                    "Please send a valid link from <b>Radio Javan</b>, <b>SoundCloud</b>, or <b>Spotify</b>.",
+                    parse_mode="HTML",
+                    reply_markup=error_keyboard(),
+                )
+                return
 
-            # 2. Download in an isolated temporary directory with universal .mp3 extension
-            with temporary_work_dir() as work_dir:
-                filename = safe_filename(f"{track.artist} - {track.title}") + ".mp3"
-                file_path = work_dir / filename
+            status_msg = bot.send_message(message.chat.id, "🔍 <i>Analyzing link...</i>", parse_mode="HTML")
 
-                def progress_callback(downloaded: int, total: int, percent: int):
-                    bar = format_progress_bar(percent, downloaded_bytes=downloaded, total_bytes=total)
+            try:
+                # 1. Fetch metadata and stream link
+                track = service.fetch_track(raw_text)
+                badge = get_service_badge(track.source)
+                title_esc = html.escape(track.title or "Unknown Track")
+                artist_esc = html.escape(track.artist or "Unknown Artist")
+
+                bot.edit_message_text(
+                    f"📥 <b>[{badge}]</b> <i>{artist_esc} - {title_esc}</i>\n⏳ Starting download...",
+                    message.chat.id,
+                    status_msg.message_id,
+                    parse_mode="HTML",
+                )
+
+                # 2. Download in an isolated temporary directory with universal .mp3 extension
+                with temporary_work_dir() as work_dir:
+                    filename = safe_filename(f"{track.artist} - {track.title}") + ".mp3"
+                    file_path = work_dir / filename
+
+                    def progress_callback(downloaded: int, total: int, percent: int):
+                        bar = format_progress_bar(percent, downloaded_bytes=downloaded, total_bytes=total)
+                        try:
+                            bot.edit_message_text(
+                                f"📥 <b>[{badge}]</b> <i>{artist_esc} - {title_esc}</i>\n"
+                                f"⏳ <b>Downloading...</b>\n{bar}",
+                                message.chat.id,
+                                status_msg.message_id,
+                                parse_mode="HTML",
+                            )
+                        except Exception:
+                            pass  # Silently ignore rate-limiting edits during download
+
+                    service.download_track(
+                        track,
+                        file_path,
+                        on_progress=progress_callback,
+                    )
+
+                    # Ensure target file exists and is strictly an MP3
+                    if not file_path.exists():
+                        # Check if service saved as non-mp3 or different stem in work_dir
+                        candidates = list(work_dir.glob("*"))
+                        audio_candidates = [c for c in candidates if c.is_file() and c != file_path]
+                        if audio_candidates:
+                            chosen = audio_candidates[0]
+                            if chosen.suffix.lower() == ".mp3":
+                                chosen.rename(file_path)
+                            else:
+                                convert_to_mp3(chosen, file_path)
+                                chosen.unlink(missing_ok=True)
+                        else:
+                            raise RuntimeError(f"Downloaded file not found at {file_path}")
+
+                    # Enforce universal MP3 audio format
+                    file_path = ensure_mp3(file_path)
+
+                    file_size = os.path.getsize(file_path)
+
+                    # 3. Check Telegram 50MB upload limit
+                    if file_size > config.MAX_AUDIO_BYTES:
+                        size_mb = file_size / (1024 * 1024)
+                        fallback_link = track.share_url or (track.download_url if track.download_url.startswith("http") else raw_text)
+                        warning_text = (
+                            f"⚠️ <b>File is too large for Telegram upload!</b>\n\n"
+                            f"Size: <b>{size_mb:.1f} MB</b> (Telegram bot limit is 50 MB).\n"
+                            f"You can listen or download directly via browser:"
+                        )
+                        bot.edit_message_text(
+                            warning_text,
+                            message.chat.id,
+                            status_msg.message_id,
+                            reply_markup=oversized_file_keyboard(fallback_link),
+                            parse_mode="HTML",
+                        )
+                        return
+
+                    # 4. Apply ID3v2 metadata tags
                     try:
                         bot.edit_message_text(
-                            f"📥 <b>[{badge}]</b> <i>{track.artist} - {track.title}</i>\n"
-                            f"⏳ <b>Downloading...</b>\n{bar}",
+                            f"🏷 <i>Applying ID3 metadata & album artwork...</i>",
                             message.chat.id,
                             status_msg.message_id,
                             parse_mode="HTML",
                         )
                     except Exception:
-                        pass  # Silently ignore rate-limiting edits during download
+                        pass
 
-                service.download_track(
-                    track,
-                    file_path,
-                    on_progress=progress_callback,
-                )
+                    apply_mp3_metadata(file_path, track)
 
-                # Ensure target file exists and is strictly an MP3
-                if not file_path.exists():
-                    # Check if service saved as non-mp3 or different stem in work_dir
-                    candidates = list(work_dir.glob("*"))
-                    audio_candidates = [c for c in candidates if c.is_file() and c != file_path]
-                    if audio_candidates:
-                        chosen = audio_candidates[0]
-                        if chosen.suffix.lower() == ".mp3":
-                            chosen.rename(file_path)
-                        else:
-                            convert_to_mp3(chosen, file_path)
-                            chosen.unlink(missing_ok=True)
-                    else:
-                        raise RuntimeError(f"Downloaded file not found at {file_path}")
+                    # 5. Upload audio to Telegram
+                    try:
+                        bot.edit_message_text(
+                            "📤 <i>Uploading MP3 to Telegram...</i>",
+                            message.chat.id,
+                            status_msg.message_id,
+                            parse_mode="HTML",
+                        )
+                    except Exception:
+                        pass
 
-                # Enforce universal MP3 audio format
-                file_path = ensure_mp3(file_path)
+                    caption = format_caption(track)
+                    with open(file_path, "rb") as audio_fp:
+                        bot.send_audio(
+                            message.chat.id,
+                            audio_fp,
+                            caption=caption,
+                            parse_mode="HTML",
+                            title=track.title,
+                            performer=track.artist,
+                            duration=int(track.duration) if track.duration else None,
+                            reply_markup=audio_action_keyboard(track),
+                        )
 
-                file_size = os.path.getsize(file_path)
+                    # 6. Delete progress message on success
+                    try:
+                        bot.delete_message(message.chat.id, status_msg.message_id)
+                    except Exception:
+                        pass
 
-                # 3. Check Telegram 50MB upload limit
-                if file_size > config.MAX_AUDIO_BYTES:
-                    size_mb = file_size / (1024 * 1024)
-                    fallback_link = track.share_url or (track.download_url if track.download_url.startswith("http") else raw_text)
-                    warning_text = (
-                        f"⚠️ <b>File is too large for Telegram upload!</b>\n\n"
-                        f"Size: <b>{size_mb:.1f} MB</b> (Telegram bot limit is 50 MB).\n"
-                        f"You can listen or download directly via browser:"
-                    )
-                    bot.edit_message_text(
-                        warning_text,
-                        message.chat.id,
-                        status_msg.message_id,
-                        reply_markup=oversized_file_keyboard(fallback_link),
-                        parse_mode="HTML",
-                    )
-                    return
+            except Exception as e:
+                logger.exception(f"Error handling link {raw_text}: {e}")
+                if isinstance(e, ValueError):
+                    user_msg = html.escape(str(e))
+                else:
+                    user_msg = "An error occurred while processing this audio link. Please check the URL or try again later."
 
-                # 4. Apply ID3v2 metadata tags
                 try:
                     bot.edit_message_text(
-                        f"🏷 <i>Applying ID3 metadata & album artwork...</i>",
+                        f"❌ <b>Error:</b> {user_msg}",
                         message.chat.id,
                         status_msg.message_id,
+                        reply_markup=error_keyboard(),
                         parse_mode="HTML",
                     )
                 except Exception:
-                    pass
-
-                apply_mp3_metadata(file_path, track)
-
-                # 5. Upload audio to Telegram
-                try:
-                    bot.edit_message_text(
-                        "📤 <i>Uploading MP3 to Telegram...</i>",
-                        message.chat.id,
-                        status_msg.message_id,
-                        parse_mode="HTML",
-                    )
-                except Exception:
-                    pass
-
-                caption = format_caption(track)
-                with open(file_path, "rb") as audio_fp:
-                    bot.send_audio(
-                        message.chat.id,
-                        audio_fp,
-                        caption=caption,
-                        parse_mode="HTML",
-                        title=track.title,
-                        performer=track.artist,
-                        duration=int(track.duration) if track.duration else None,
-                        reply_markup=audio_action_keyboard(track),
-                    )
-
-                # 6. Delete progress message on success
-                try:
-                    bot.delete_message(message.chat.id, status_msg.message_id)
-                except Exception:
-                    pass
-
-        except Exception as e:
-            logger.exception(f"Error handling link {raw_text}: {e}")
-            try:
-                bot.edit_message_text(
-                    f"❌ <b>Error:</b> {str(e)}",
-                    message.chat.id,
-                    status_msg.message_id,
-                    reply_markup=error_keyboard(),
-                    parse_mode="HTML",
-                )
-            except Exception:
-                bot.send_message(
-                    message.chat.id,
-                    f"❌ <b>Error:</b> {str(e)}",
-                    reply_markup=error_keyboard(),
-                    parse_mode="HTML",
-                )
+                    try:
+                        bot.send_message(
+                            message.chat.id,
+                            f"❌ <b>Error:</b> {user_msg}",
+                            reply_markup=error_keyboard(),
+                            parse_mode="HTML",
+                        )
+                    except Exception:
+                        pass
+        finally:
+            with _active_downloads_lock:
+                _active_downloads.discard(user_id)

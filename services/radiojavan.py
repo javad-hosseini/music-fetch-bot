@@ -1,11 +1,44 @@
 import re
-import requests
+import logging
+from urllib.parse import urlparse
 from pathlib import Path
 from typing import Optional, Callable
+import requests
 from radiojavanapi import Client
 from services.base import BaseMusicService, TrackInfo
 from utils.downloader import download_stream
 from utils.audio import convert_to_mp3
+
+logger = logging.getLogger(__name__)
+
+ALLOWED_RJ_HOSTS = {
+    "radiojavan.com",
+    "www.radiojavan.com",
+    "play.radiojavan.com",
+    "rj.app",
+    "www.rj.app",
+}
+
+
+def _is_valid_rj_url(url: str) -> bool:
+    """Validate that URL belongs strictly to trusted Radio Javan domains or scheme."""
+    if not url or not isinstance(url, str):
+        return False
+    url = url.strip()
+    if url.lower().startswith("radiojavan://"):
+        return True
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = (parsed.hostname or "").lower()
+        return (
+            hostname in ALLOWED_RJ_HOSTS
+            or hostname.endswith(".radiojavan.com")
+            or hostname.endswith(".rj.app")
+        )
+    except Exception:
+        return False
 
 
 class RadioJavanService(BaseMusicService):
@@ -18,35 +51,42 @@ class RadioJavanService(BaseMusicService):
         self.client = Client()
 
     def can_handle(self, url: str) -> bool:
-        """Check if URL belongs to Radio Javan."""
+        """Check if URL belongs strictly to Radio Javan."""
         if not url:
             return False
-        patterns = [
-            r"radiojavan\.com",
-            r"rj\.app",
-            r"radiojavan:\/\/",
-        ]
-        return any(re.search(p, url, re.IGNORECASE) for p in patterns)
+        match = re.search(r"https?://[^\s]+|radiojavan://[^\s]+", url, re.IGNORECASE)
+        candidate = match.group(0) if match else url.strip()
+        return _is_valid_rj_url(candidate)
 
     def resolve_url(self, raw_url: str, timeout: int = 10) -> Optional[str]:
-        """Resolve redirects (e.g. rj.app short links) into canonical URLs."""
+        """Resolve redirects (e.g. rj.app short links) into canonical URLs with SSRF protection."""
         try:
-            # Extract clean URL if surrounded by other text
-            url_match = re.search(r"https?://[^\s]+", raw_url)
-            target = url_match.group(0) if url_match else raw_url
+            url_match = re.search(r"https?://[^\s]+|radiojavan://[^\s]+", raw_url)
+            target = url_match.group(0) if url_match else raw_url.strip()
+
+            if not _is_valid_rj_url(target):
+                return None
+
+            if target.lower().startswith("radiojavan://"):
+                return target
 
             resp = requests.get(target, allow_redirects=True, timeout=timeout)
             final_url = resp.url
             if "radiojavan://" in final_url:
-                # If redirect was intercepted by custom scheme, fallback to target
                 return target
+            if not _is_valid_rj_url(final_url):
+                logger.warning(f"Rejecting redirect to untrusted domain: {final_url}")
+                return None
             return final_url
-        except Exception:
-            return raw_url
+        except Exception as e:
+            logger.debug(f"Could not resolve redirect for {raw_url}: {e}")
+            return raw_url if _is_valid_rj_url(raw_url) else None
 
     def fetch_track(self, raw_url: str) -> TrackInfo:
         """Fetch track metadata and stream/download URL."""
-        resolved_url = self.resolve_url(raw_url) or raw_url
+        resolved_url = self.resolve_url(raw_url)
+        if not resolved_url or not _is_valid_rj_url(resolved_url):
+            raise ValueError("Song not found or invalid Radio Javan link.")
 
         if "podcast" in resolved_url.lower():
             return self._fetch_podcast(resolved_url)

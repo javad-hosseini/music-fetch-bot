@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 from typing import Optional, Callable, Dict, Any, List
 
+from urllib.parse import urlparse
 import requests
 import yt_dlp
 
@@ -12,6 +13,33 @@ from services.base import BaseMusicService, TrackInfo
 from utils.downloader import download_stream
 
 logger = logging.getLogger(__name__)
+
+ALLOWED_SOUNDCLOUD_HOSTS = {
+    "soundcloud.com",
+    "www.soundcloud.com",
+    "m.soundcloud.com",
+    "on.soundcloud.com",
+}
+
+
+def _is_valid_soundcloud_url(url: str) -> bool:
+    """Validate that URL belongs strictly to trusted SoundCloud domains."""
+    if not url or not isinstance(url, str):
+        return False
+    url = url.strip()
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = "https://" + url
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = (parsed.hostname or "").lower()
+        return (
+            hostname in ALLOWED_SOUNDCLOUD_HOSTS
+            or hostname.endswith(".soundcloud.com")
+        )
+    except Exception:
+        return False
 
 FALLBACK_CLIENT_IDS = [
     "Pb72ranhoyt6gw7hM7TkzUItXlMWSNSo",
@@ -39,14 +67,12 @@ class SoundCloudService(BaseMusicService):
         }
 
     def can_handle(self, url: str) -> bool:
-        """Check if URL belongs to SoundCloud."""
+        """Check if URL belongs strictly to SoundCloud."""
         if not url:
             return False
-        patterns = [
-            r"https?://(?:www\.|m\.|on\.)?soundcloud\.com/[^\s]+",
-            r"soundcloud\.com/[^\s]+",
-        ]
-        return any(re.search(p, url, re.IGNORECASE) for p in patterns)
+        match = re.search(r"https?://[^\s]+|(?:(?:www\.|m\.|on\.)?soundcloud\.com/[^\s]+)", url, re.IGNORECASE)
+        candidate = match.group(0) if match else url.strip()
+        return _is_valid_soundcloud_url(candidate)
 
     def get_client_id(self) -> str:
         """
@@ -91,15 +117,24 @@ class SoundCloudService(BaseMusicService):
         raise ValueError("Could not obtain a SoundCloud client_id.")
 
     def resolve_url(self, raw_url: str) -> str:
-        """Extract and resolve shortlinks (e.g. on.soundcloud.com) into canonical URLs."""
-        url_match = re.search(r"https?://[^\s]+", raw_url)
-        target = url_match.group(0) if url_match else raw_url
-        if "on.soundcloud.com" in target:
-            try:
+        """Extract and resolve shortlinks (e.g. on.soundcloud.com) into canonical URLs with SSRF protection."""
+        url_match = re.search(r"https?://[^\s]+|(?:(?:www\.|m\.|on\.)?soundcloud\.com/[^\s]+)", raw_url)
+        target = url_match.group(0) if url_match else raw_url.strip()
+        if not target.startswith("http://") and not target.startswith("https://"):
+            target = "https://" + target
+
+        if not _is_valid_soundcloud_url(target):
+            raise ValueError("Invalid or untrusted SoundCloud link.")
+
+        try:
+            parsed = urlparse(target)
+            if (parsed.hostname or "").lower() == "on.soundcloud.com":
                 resp = requests.get(target, allow_redirects=True, headers=self._headers, timeout=config.NETWORK_TIMEOUT)
-                return resp.url
-            except Exception as e:
-                logger.warning(f"Failed to follow on.soundcloud.com redirect: {e}")
+                if _is_valid_soundcloud_url(resp.url):
+                    return resp.url
+                logger.warning(f"SoundCloud shortlink redirected to non-SoundCloud domain: {resp.url}")
+        except Exception as e:
+            logger.warning(f"Failed to follow on.soundcloud.com redirect: {e}")
         return target
 
     def fetch_track(self, raw_url: str) -> TrackInfo:

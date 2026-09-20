@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 from typing import Optional, Callable, Dict, Any, List
 
+from urllib.parse import urlparse
 import requests
 import yt_dlp
 
@@ -11,6 +12,34 @@ import config
 from services.base import BaseMusicService, TrackInfo
 
 logger = logging.getLogger(__name__)
+
+ALLOWED_SPOTIFY_HOSTS = {
+    "spotify.com",
+    "open.spotify.com",
+    "www.spotify.com",
+    "spotify.link",
+}
+
+
+def _is_valid_spotify_url(url: str) -> bool:
+    """Validate that URL belongs strictly to trusted Spotify domains or URI format."""
+    if not url or not isinstance(url, str):
+        return False
+    url = url.strip()
+    if url.lower().startswith("spotify:track:"):
+        return bool(re.match(r"^spotify:track:[a-zA-Z0-9]{22}$", url, re.IGNORECASE))
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = (parsed.hostname or "").lower()
+        return (
+            hostname in ALLOWED_SPOTIFY_HOSTS
+            or hostname.endswith(".spotify.com")
+            or hostname.endswith(".spotify.link")
+        )
+    except Exception:
+        return False
 
 
 class SpotifyService(BaseMusicService):
@@ -52,28 +81,32 @@ class SpotifyService(BaseMusicService):
                 self._sp_client = None
 
     def can_handle(self, url: str) -> bool:
-        """Check if URL belongs to Spotify."""
+        """Check if URL belongs strictly to Spotify."""
         if not url:
             return False
-        patterns = [
-            r"spotify\.com",
-            r"spotify\.link",
-            r"spotify:track:",
-        ]
-        return any(re.search(p, url, re.IGNORECASE) for p in patterns)
+        match = re.search(r"https?://[^\s]+|spotify:track:[a-zA-Z0-9]+", url, re.IGNORECASE)
+        candidate = match.group(0) if match else url.strip()
+        return _is_valid_spotify_url(candidate)
 
     def extract_track_id(self, raw_url: str) -> str:
-        """Resolve shortlinks and extract the 22-character Spotify track ID."""
+        """Resolve shortlinks and extract the 22-character Spotify track ID with SSRF protection."""
         url_match = re.search(r"https?://[^\s]+|spotify:track:[a-zA-Z0-9]+", raw_url)
-        target = url_match.group(0) if url_match else raw_url
+        target = url_match.group(0) if url_match else raw_url.strip()
 
-        # Follow shortlink redirects (e.g. spotify.link)
-        if "spotify.link" in target:
-            try:
+        if not _is_valid_spotify_url(target):
+            raise ValueError("Invalid Spotify track link or track ID could not be parsed.")
+
+        # Follow shortlink redirects only if domain is spotify.link
+        try:
+            parsed = urlparse(target)
+            if (parsed.hostname or "").lower().endswith("spotify.link"):
                 resp = requests.get(target, allow_redirects=True, headers=self._headers, timeout=config.NETWORK_TIMEOUT)
-                target = resp.url
-            except Exception as e:
-                logger.warning(f"Could not resolve spotify.link redirect: {e}")
+                if _is_valid_spotify_url(resp.url):
+                    target = resp.url
+                else:
+                    logger.warning(f"Spotify shortlink redirected to non-Spotify domain: {resp.url}")
+        except Exception as e:
+            logger.warning(f"Could not resolve spotify.link redirect: {e}")
 
         # Match track ID from web URL or URI
         id_match = re.search(r"(?:/track/|spotify:track:)([a-zA-Z0-9]{22})", target)
