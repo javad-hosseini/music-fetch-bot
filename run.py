@@ -64,6 +64,12 @@ def run_diagnostics() -> int:
         print(f"  ❌ Download directory does not exist: {config.DOWNLOAD_DIR}")
         all_ok = False
 
+    # 5. Network Proxy
+    if config.PROXY_URL:
+        print(f"  ✅ Network Proxy: {config.PROXY_URL}")
+    else:
+        print("  ℹ️  Network Proxy: Direct connection (set PROXY_URL in .env if in restricted region)")
+
     print("\n" + ("=" * 50))
     if all_ok:
         print("🎉 All diagnostics passed! System is ready to run.\n")

@@ -200,6 +200,55 @@ class TestServices(unittest.TestCase):
         self.assertEqual(bytes_written, 1024)
         mock_download_stream.assert_called_once_with("https://cf-media.sndcdn.com/stream.mp3", test_path, on_progress=None)
 
+    def test_trackinfo_coerces_non_string_urls(self):
+        class MockHttpUrl:
+            def __init__(self, u):
+                self._u = u
+            def __str__(self):
+                return self._u
+
+        track = TrackInfo(
+            title="Song Title",
+            artist="Artist Name",
+            download_url=MockHttpUrl("https://example.com/dl"),
+            share_url=MockHttpUrl("https://example.com/share"),
+            cover_url=MockHttpUrl("https://example.com/art.jpg"),
+        )
+        self.assertIsInstance(track.download_url, str)
+        self.assertIsInstance(track.share_url, str)
+        self.assertIsInstance(track.cover_url, str)
+        self.assertEqual(track.share_url, "https://example.com/share")
+
+    @patch("yt_dlp.YoutubeDL")
+    def test_spotify_download_fallback_radiojavan(self, mock_ydl_class):
+        # Simulate yt-dlp probe failing with connection error
+        mock_probe = MagicMock()
+        mock_probe.extract_info.side_effect = Exception("HTTPSConnection: [WinError 10061] Connection refused")
+        mock_ydl_class.return_value.__enter__.return_value = mock_probe
+
+        service = SpotifyService()
+        track = TrackInfo(
+            title="Mohem Ni",
+            artist="Arta, poobon, DJ MO",
+            download_url="https://open.spotify.com/track/3RGhl4wCg4yKMVMiMQHi1u",
+            duration=137,
+        )
+
+        test_path = Path("test_fallback_song.mp3")
+        with patch.object(service, "_try_radiojavan_fallback") as mock_fallback:
+            def create_file(t, p, on_progress=None):
+                p.write_bytes(b"mock rj audio bytes")
+                return True
+            mock_fallback.side_effect = create_file
+
+            try:
+                size = service.download_track(track, test_path)
+                self.assertEqual(size, len(b"mock rj audio bytes"))
+                mock_fallback.assert_called_once()
+            finally:
+                if test_path.exists():
+                    test_path.unlink()
+
 
 if __name__ == "__main__":
     unittest.main()

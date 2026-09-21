@@ -66,6 +66,25 @@ class TestFormatters(unittest.TestCase):
         # Length under Telegram limit
         self.assertLessEqual(len(caption), 1024)
 
+    def test_format_caption_with_httpurl_object(self):
+        """Verify format_caption handles HttpUrl or object lacking replace() method."""
+        class MockHttpUrl:
+            def __init__(self, url):
+                self._url = url
+            def __str__(self):
+                return self._url
+
+        track = TrackInfo(
+            title="Dekamond Song",
+            artist="Dekamond",
+            download_url="https://example.com/audio.mp3",
+            share_url=MockHttpUrl("https://play.radiojavan.com/song/dekamond-100-saal"),
+            source="Radio Javan",
+        )
+        caption = format_caption(track)
+        self.assertIn("https://play.radiojavan.com/song/dekamond-100-saal", caption)
+        self.assertIn("📻 Radio Javan", caption)
+
 
 if __name__ == "__main__":
     unittest.main()

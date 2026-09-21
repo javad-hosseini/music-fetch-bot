@@ -39,6 +39,10 @@ def create_bot() -> TeleBot:
     apihelper.READ_TIMEOUT = 300
     apihelper.CONNECT_TIMEOUT = 300
 
+    if config.PROXY_URL:
+        apihelper.proxy = {'http': config.PROXY_URL, 'https': config.PROXY_URL}
+        logger.info(f"Configured Telegram proxy: {config.PROXY_URL}")
+
     bot = TeleBot(config.BOT_TOKEN, parse_mode=None)
     register_handlers(bot)
     setup_bot_commands(bot)

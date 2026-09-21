@@ -267,6 +267,8 @@ class SoundCloudService(BaseMusicService):
             "no_warnings": True,
             "noplaylist": True,
         }
+        if config.PROXY_URL:
+            ydl_opts["proxy"] = config.PROXY_URL
 
         # Source URL can be track share_url or track download_url
         source_url = track.share_url or track.download_url

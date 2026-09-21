@@ -119,7 +119,7 @@ class RadioJavanService(BaseMusicService):
             cover_url=str(song.photo) if getattr(song, "photo", None) else None,
             lyrics=getattr(song, "lyric", None),
             source="Radio Javan",
-            share_url=getattr(song, "share_link", url),
+            share_url=str(getattr(song, "share_link", None) or url),
             plays=getattr(song, "plays", None),
             likes=getattr(song, "likes", None),
         )
@@ -150,7 +150,7 @@ class RadioJavanService(BaseMusicService):
             cover_url=str(podcast.photo) if getattr(podcast, "photo", None) else None,
             lyrics=None,
             source="Radio Javan Podcast",
-            share_url=getattr(podcast, "share_link", url),
+            share_url=str(getattr(podcast, "share_link", None) or url),
             plays=getattr(podcast, "plays", None),
             likes=getattr(podcast, "likes", None),
         )

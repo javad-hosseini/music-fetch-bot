@@ -57,9 +57,9 @@ def audio_action_keyboard(track: TrackInfo) -> InlineKeyboardMarkup:
 
     # Direct source link
     if track.share_url:
-        buttons.append(InlineKeyboardButton("🔗 Listen on Source", url=track.share_url))
-    elif track.download_url and track.download_url.startswith("http"):
-        buttons.append(InlineKeyboardButton("🔗 Direct Link", url=track.download_url))
+        buttons.append(InlineKeyboardButton("🔗 Listen on Source", url=str(track.share_url)))
+    elif track.download_url and str(track.download_url).startswith("http"):
+        buttons.append(InlineKeyboardButton("🔗 Direct Link", url=str(track.download_url)))
 
     if buttons:
         markup.add(*buttons)

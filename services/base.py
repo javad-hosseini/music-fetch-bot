@@ -20,6 +20,18 @@ class TrackInfo:
     plays: Optional[Any] = None
     likes: Optional[Any] = None
 
+    def __post_init__(self):
+        if self.title is not None:
+            self.title = str(self.title)
+        if self.artist is not None:
+            self.artist = str(self.artist)
+        if self.download_url is not None:
+            self.download_url = str(self.download_url)
+        if self.share_url is not None:
+            self.share_url = str(self.share_url)
+        if self.cover_url is not None:
+            self.cover_url = str(self.cover_url)
+
 
 class BaseMusicService(ABC):
     """

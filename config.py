@@ -31,6 +31,23 @@ SPOTIPY_CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET", "").strip()
 # SoundCloud client ID (optional, dynamic scraping used if not provided)
 SOUNDCLOUD_CLIENT_ID = os.getenv("SOUNDCLOUD_CLIENT_ID", "").strip()
 
+# Proxy configuration (optional, for Telegram API, yt-dlp, and streaming)
+# Supports PROXY_URL from .env or standard HTTP_PROXY/HTTPS_PROXY/ALL_PROXY
+raw_proxy = (
+    os.getenv("PROXY_URL", "").strip()
+    or os.getenv("HTTPS_PROXY", "").strip()
+    or os.getenv("HTTP_PROXY", "").strip()
+    or os.getenv("ALL_PROXY", "").strip()
+)
+if raw_proxy and not (raw_proxy.startswith("http://") or raw_proxy.startswith("https://") or raw_proxy.startswith("socks")):
+    PROXY_URL = f"http://{raw_proxy}"
+else:
+    PROXY_URL = raw_proxy
+
+if PROXY_URL:
+    os.environ["HTTP_PROXY"] = PROXY_URL
+    os.environ["HTTPS_PROXY"] = PROXY_URL
+
 
 def get_ffmpeg_binary() -> str | None:
     """Locate FFmpeg executable: custom path, imageio-ffmpeg package, or system PATH."""

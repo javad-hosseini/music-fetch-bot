@@ -99,6 +99,6 @@ def format_caption(track: TrackInfo) -> str:
         base_caption += f"\n📝 <b>Lyrics:</b>\n<pre>{escaped_lyrics}</pre>\n"
 
     if track.share_url:
-        base_caption += f"\n🔗 <a href='{html.escape(track.share_url)}'>Listen / Source Link</a>"
+        base_caption += f"\n🔗 <a href='{html.escape(str(track.share_url))}'>Listen / Source Link</a>"
 
     return base_caption

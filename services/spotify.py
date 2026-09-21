@@ -224,6 +224,70 @@ class SpotifyService(BaseMusicService):
 
         raise ValueError(f"Could not retrieve track metadata from Spotify (HTTP {resp.status_code}).")
 
+    def _try_radiojavan_fallback(
+        self,
+        track: TrackInfo,
+        target_path: Path,
+        on_progress: Optional[Callable[[int, int, int], None]] = None,
+    ) -> bool:
+        """
+        Search Radio Javan for matching track and download directly.
+        Provides a fast fallback for Persian and local music without requiring YouTube/proxy.
+        """
+        try:
+            from radiojavanapi import Client
+            from utils.downloader import download_stream
+            from utils.audio import convert_to_mp3
+
+            client = Client()
+            clean_artists = [a.strip() for a in re.split(r"[,&/]+", track.artist) if a.strip()]
+            first_artist = clean_artists[0] if clean_artists else track.artist
+
+            queries = [
+                f"{first_artist} {track.title}",
+                f"{track.artist} {track.title}",
+                track.title,
+            ]
+
+            norm_title = re.sub(r"[^\w]", "", track.title.lower())
+
+            for q in queries:
+                if not q.strip():
+                    continue
+                try:
+                    res = client.search(q.strip())
+                    songs = getattr(res, "songs", []) if res else []
+                    for s in songs:
+                        s_name = getattr(s, "name", None) or getattr(s, "title", "")
+                        norm_s_name = re.sub(r"[^\w]", "", s_name.lower())
+                        if norm_title and (norm_title in norm_s_name or norm_s_name in norm_title):
+                            full_song = client.get_song_by_id(s.id)
+                            if not full_song:
+                                continue
+                            dl_url = str(full_song.hq_link or full_song.lq_link or full_song.link or "")
+                            if not dl_url:
+                                continue
+
+                            logger.info(f"Spotify fallback: Matched '{track.artist} - {track.title}' on Radio Javan (ID: {s.id})")
+                            is_m4a = ".m4a" in dl_url.lower()
+                            if is_m4a:
+                                temp_m4a = target_path.with_suffix(".m4a")
+                                try:
+                                    download_stream(dl_url, temp_m4a, on_progress=on_progress)
+                                    convert_to_mp3(temp_m4a, target_path)
+                                    return target_path.exists()
+                                finally:
+                                    temp_m4a.unlink(missing_ok=True)
+                            else:
+                                download_stream(dl_url, target_path, on_progress=on_progress)
+                                return target_path.exists()
+                except Exception as ex:
+                    logger.debug(f"Radio Javan fallback query '{q}' failed: {ex}")
+        except Exception as e:
+            logger.debug(f"Radio Javan fallback search error: {e}")
+
+        return False
+
     def download_track(
         self,
         track: TrackInfo,
@@ -231,7 +295,7 @@ class SpotifyService(BaseMusicService):
         on_progress: Optional[Callable[[int, int, int], None]] = None,
     ) -> int:
         """
-        Download matched audio for a Spotify track using yt-dlp and YouTube Music/YouTube.
+        Download matched audio for a Spotify track using yt-dlp (YouTube) or Radio Javan fallback.
         """
         target_stem = str(target_path.with_suffix(""))
         out_tmpl = f"{target_stem}.%(ext)s"
@@ -246,6 +310,16 @@ class SpotifyService(BaseMusicService):
                 except Exception:
                     pass
 
+        probe_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": True,
+            "socket_timeout": 5,
+            "retries": 1,
+        }
+        if config.PROXY_URL:
+            probe_opts["proxy"] = config.PROXY_URL
+
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": out_tmpl,
@@ -259,35 +333,66 @@ class SpotifyService(BaseMusicService):
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
+            "socket_timeout": 15,
+            "retries": 2,
         }
+        if config.PROXY_URL:
+            ydl_opts["proxy"] = config.PROXY_URL
 
-        # Search candidates on YouTube / YouTube Music
-        search_query = f"ytsearch3:{track.artist} - {track.title} audio"
+        # Candidate search queries for YouTube
+        clean_artist_str = " ".join([a.strip() for a in re.split(r"[,&/]+", track.artist) if a.strip()])
+        search_candidates = [
+            f"ytsearch3:{clean_artist_str} - {track.title} audio",
+            f"ytsearch3:{clean_artist_str} {track.title}",
+            f"ytsearch3:{track.title} audio",
+        ]
+
         best_video_url = None
-
-        with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "extract_flat": True}) as probe_ydl:
+        is_connection_error = False
+        for sq in search_candidates:
             try:
-                info = probe_ydl.extract_info(search_query, download=False)
-                entries = info.get("entries", []) if info else []
-                if entries:
-                    best_entry = entries[0]
-                    # If target duration is known, pick entry with lowest duration discrepancy
-                    if track.duration:
-                        for entry in entries:
-                            entry_duration = entry.get("duration")
-                            if entry_duration and abs(entry_duration - track.duration) <= 12:
-                                best_entry = entry
-                                break
-                    video_id = best_entry.get("id") or best_entry.get("url")
-                    best_video_url = f"https://www.youtube.com/watch?v={video_id}" if video_id and not video_id.startswith("http") else video_id
+                with yt_dlp.YoutubeDL(probe_opts) as probe_ydl:
+                    info = probe_ydl.extract_info(sq, download=False)
+                    entries = info.get("entries", []) if info else []
+                    if entries:
+                        best_entry = entries[0]
+                        if track.duration:
+                            for entry in entries:
+                                entry_duration = entry.get("duration")
+                                if entry_duration and abs(entry_duration - track.duration) <= 12:
+                                    best_entry = entry
+                                    break
+                        video_id = best_entry.get("id") or best_entry.get("url")
+                        best_video_url = f"https://www.youtube.com/watch?v={video_id}" if video_id and not str(video_id).startswith("http") else video_id
+                        if best_video_url:
+                            break
             except Exception as e:
-                logger.warning(f"yt-dlp probe search error: {e}")
+                logger.debug(f"yt-dlp probe error for '{sq}': {e}")
+                err_str = str(e).lower()
+                if "connection" in err_str or "10061" in err_str or "refused" in err_str or "timed out" in err_str:
+                    is_connection_error = True
+                    break
 
-        # Fallback to direct search query if probe failed
-        download_target = best_video_url or f"ytsearch1:{track.artist} - {track.title} audio"
+        # If YouTube search failed or connection blocked, try Radio Javan fallback immediately
+        if not best_video_url:
+            logger.info(f"YouTube probe unavailable/empty for '{track.artist} - {track.title}', trying Radio Javan fallback...")
+            if self._try_radiojavan_fallback(track, target_path, on_progress):
+                if target_path.exists():
+                    if on_progress:
+                        try:
+                            size = target_path.stat().st_size
+                            on_progress(size, size, 100)
+                        except Exception:
+                            pass
+                    return target_path.stat().st_size
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([download_target])
+        download_target = best_video_url or (None if is_connection_error else search_candidates[0])
+        if download_target:
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([download_target])
+            except Exception as dl_err:
+                logger.warning(f"yt-dlp download failed: {dl_err}")
 
         if target_path.exists():
             if on_progress:
@@ -304,4 +409,20 @@ class SpotifyService(BaseMusicService):
                 candidate.rename(target_path)
             return target_path.stat().st_size
 
-        raise RuntimeError(f"Could not extract audio for '{track.artist} - {track.title}'.")
+        # Fallback to Radio Javan if YouTube download did not produce a file
+        logger.info(f"YouTube download did not produce file for '{track.artist} - {track.title}', attempting Radio Javan fallback...")
+        if self._try_radiojavan_fallback(track, target_path, on_progress):
+            if target_path.exists():
+                if on_progress:
+                    try:
+                        size = target_path.stat().st_size
+                        on_progress(size, size, 100)
+                    except Exception:
+                        pass
+                return target_path.stat().st_size
+
+        proxy_hint = ""
+        if not config.PROXY_URL:
+            proxy_hint = " If YouTube is restricted on your network, set PROXY_URL in .env (e.g. PROXY_URL=http://127.0.0.1:7890) or enable your VPN."
+
+        raise RuntimeError(f"Could not extract audio for '{track.artist} - {track.title}'.{proxy_hint}")
