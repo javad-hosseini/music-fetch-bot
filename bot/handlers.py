@@ -31,11 +31,12 @@ _active_downloads_lock = threading.Lock()
 TEXT_START = (
     "👋 <b>Welcome to Music Downloader Bot!</b>\n\n"
     "Send me any music or podcast link from our supported platforms, and I'll download "
-    "it for you as a universal <b>MP3</b> with full ID3 tags and high-resolution album artwork.\n\n"
+    "it for you as a universal <b>MP3</b> with full ID3 tags, lyrics, and high-resolution album artwork.\n\n"
     "📌 <b>Supported Services:</b>\n"
     "• <b>Radio Javan</b> (Songs & Podcasts)\n"
     "• <b>SoundCloud</b> (Tracks)\n"
-    "• <b>Spotify</b> (Tracks)\n\n"
+    "• <b>Spotify</b> (Tracks)\n"
+    "• <b>YouTube & YouTube Music</b> (Tracks & Shorts)\n\n"
     "💡 <i>Tap a button below to explore features or check bot status:</i>"
 )
 
@@ -54,10 +55,11 @@ TEXT_HELP = (
 
 TEXT_PLATFORMS = (
     "🎵 <b>Supported Music Platforms</b>\n\n"
-    "The bot currently supports 3 major music platforms (all converted strictly to MP3):\n\n"
+    "The bot currently supports 4 major music platforms (all converted strictly to MP3):\n\n"
     "1. 📻 <b>Radio Javan</b> — Full song and podcast downloads with ID3v2 tags.\n"
     "2. ☁️ <b>SoundCloud</b> — Progressive & HLS streams with 500x500 album art.\n"
-    "3. 🟢 <b>Spotify</b> — Official metadata & 640x640 artwork matched with audio.\n\n"
+    "3. 🟢 <b>Spotify</b> — Official metadata & 640x640 artwork matched with audio.\n"
+    "4. 🔴 <b>YouTube Music</b> — Audio extraction, full ID3 tags & lyrics.\n\n"
     "<i>Tap a platform below to view specific URL examples:</i>"
 )
 
@@ -88,6 +90,16 @@ TEXT_PLAT_SP = (
     "• Shortlinks: <code>https://spotify.link/abcdef</code>\n"
     "• Spotify URIs: <code>spotify:track:4cOdK2wGLETKBW3PvgPWqT</code>\n\n"
     "✨ <i>Output: Strict MP3 with official metadata & 640x640 artwork.</i>"
+)
+
+TEXT_PLAT_YT = (
+    "🔴 <b>YouTube & YouTube Music Support</b>\n\n"
+    "<b>Supported Link Formats:</b>\n"
+    "• YouTube Music: <code>https://music.youtube.com/watch?v=video_id</code>\n"
+    "• YouTube Video: <code>https://www.youtube.com/watch?v=video_id</code>\n"
+    "• Shortlinks: <code>https://youtu.be/video_id</code>\n"
+    "• Shorts: <code>https://www.youtube.com/shorts/video_id</code>\n\n"
+    "✨ <i>Output: Strict MP3 with lyrics, artist/title metadata & high-res cover.</i>"
 )
 
 TEXT_ABOUT = (
@@ -229,6 +241,14 @@ def register_handlers(bot: TeleBot) -> None:
                     parse_mode="HTML",
                     reply_markup=platform_detail_keyboard(),
                 )
+            elif data == "ui_plat_yt":
+                bot.edit_message_text(
+                    TEXT_PLAT_YT,
+                    chat_id,
+                    msg_id,
+                    parse_mode="HTML",
+                    reply_markup=platform_detail_keyboard(),
+                )
             elif data == "ui_ping":
                 t0 = time.time()
                 bot.edit_message_text(
@@ -256,7 +276,60 @@ def register_handlers(bot: TeleBot) -> None:
         except Exception as e:
             logger.debug(f"Callback query edit suppressed: {e}")
 
-    # 3. Music link processor
+    # 3. Callback query handler for interactive full lyrics display
+    @bot.callback_query_handler(func=lambda call: call.data and call.data.startswith("lyr_"))
+    def handle_lyrics_callback(call: CallbackQuery):
+        try:
+            bot.answer_callback_query(call.id)
+        except Exception:
+            pass
+
+        key = call.data.replace("lyr_", "")
+        from bot.keyboards import get_cached_lyrics
+
+        cached = get_cached_lyrics(key)
+        if not cached or not cached.get("lyrics"):
+            bot.send_message(
+                call.message.chat.id,
+                "⚠️ <i>Lyrics are no longer cached for this track or session expired.</i>",
+                parse_mode="HTML",
+            )
+            return
+
+        title_esc = html.escape(str(cached.get("title", "Track")))
+        artist_esc = html.escape(str(cached.get("artist", "Artist")))
+        lyrics_text = str(cached.get("lyrics", "")).strip()
+
+        MAX_CHUNK = 3800
+        header = f"📝 <b>Lyrics:</b> <i>{artist_esc} - {title_esc}</i>\n\n"
+
+        if len(lyrics_text) <= MAX_CHUNK:
+            bot.send_message(
+                call.message.chat.id,
+                header + f"<pre>{html.escape(lyrics_text)}</pre>",
+                parse_mode="HTML",
+            )
+        else:
+            chunks = []
+            while lyrics_text:
+                if len(lyrics_text) <= MAX_CHUNK:
+                    chunks.append(lyrics_text)
+                    break
+                split_idx = lyrics_text.rfind("\n", 0, MAX_CHUNK)
+                if split_idx == -1:
+                    split_idx = MAX_CHUNK
+                chunks.append(lyrics_text[:split_idx])
+                lyrics_text = lyrics_text[split_idx:].strip()
+
+            for i, chunk in enumerate(chunks):
+                prefix = header if i == 0 else f"📝 <i>(Part {i+1}/{len(chunks)})</i>\n\n"
+                bot.send_message(
+                    call.message.chat.id,
+                    prefix + f"<pre>{html.escape(chunk)}</pre>",
+                    parse_mode="HTML",
+                )
+
+    # 4. Music link processor
     @bot.message_handler(func=lambda msg: msg.text and bool(re.search(r"https?://|spotify:track:", msg.text)))
     def handle_music_link(message: Message):
         user_id = message.from_user.id if message.from_user else message.chat.id
@@ -282,7 +355,7 @@ def register_handlers(bot: TeleBot) -> None:
                 bot.reply_to(
                     message,
                     "⚠️ <b>Unrecognized Music Link!</b>\n\n"
-                    "Please send a valid link from <b>Radio Javan</b>, <b>SoundCloud</b>, or <b>Spotify</b>.",
+                    "Please send a valid link from <b>Radio Javan</b>, <b>SoundCloud</b>, <b>Spotify</b>, or <b>YouTube Music</b>.",
                     parse_mode="HTML",
                     reply_markup=error_keyboard(),
                 )

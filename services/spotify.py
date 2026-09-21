@@ -10,6 +10,7 @@ import yt_dlp
 
 import config
 from services.base import BaseMusicService, TrackInfo
+from utils.lyrics import fetch_lyrics
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,7 @@ class SpotifyService(BaseMusicService):
                     year=year,
                     format="mp3",
                     cover_url=cover_url,
-                    lyrics=None,
+                    lyrics=fetch_lyrics(title, artists),
                     source="Spotify",
                     share_url=canonical_share_url,
                 )
@@ -191,7 +192,7 @@ class SpotifyService(BaseMusicService):
                         year=year,
                         format="mp3",
                         cover_url=cover_url,
-                        lyrics=None,
+                        lyrics=fetch_lyrics(title, artists),
                         source="Spotify",
                         share_url=share_url,
                     )
@@ -217,7 +218,7 @@ class SpotifyService(BaseMusicService):
                 year=None,
                 format="mp3",
                 cover_url=cover_url,
-                lyrics=None,
+                lyrics=fetch_lyrics(title, artist),
                 source="Spotify",
                 share_url=share_url,
             )

@@ -3,12 +3,14 @@ from services.base import BaseMusicService, TrackInfo
 from services.radiojavan import RadioJavanService
 from services.soundcloud import SoundCloudService
 from services.spotify import SpotifyService
+from services.youtube import YouTubeMusicService
 
 # Registry of active music services
 SERVICES: List[BaseMusicService] = [
     RadioJavanService(),
     SoundCloudService(),
     SpotifyService(),
+    YouTubeMusicService(),
 ]
 
 
@@ -26,6 +28,7 @@ __all__ = [
     "RadioJavanService",
     "SoundCloudService",
     "SpotifyService",
+    "YouTubeMusicService",
     "find_service",
     "SERVICES",
 ]

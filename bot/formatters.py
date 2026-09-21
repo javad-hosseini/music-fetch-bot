@@ -14,6 +14,8 @@ def get_service_badge(source: Optional[str]) -> str:
         return "☁️ SoundCloud"
     elif "spotify" in lower:
         return "🟢 Spotify"
+    elif "youtube" in lower:
+        return "🔴 YouTube Music" if "music" in lower else "▶️ YouTube"
     return f"📡 {source}"
 
 

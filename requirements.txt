@@ -7,3 +7,4 @@ pydantic>=2.0.0
 yt-dlp>=2024.08.06
 spotipy>=2.24.0
 imageio-ffmpeg>=0.4.9
+lyricsgenius>=3.0.1

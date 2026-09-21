@@ -1,8 +1,31 @@
 """
 bot/keyboards.py - Inline keyboard builders for rich Telegram UI.
 """
+import hashlib
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from services.base import TrackInfo
+
+# Bounded in-memory store for interactive lyrics display
+_LYRICS_CACHE = {}
+
+
+def store_lyrics(title: str, artist: str, lyrics: str) -> str:
+    """Cache lyrics for Telegram callback queries with bounded size."""
+    key = hashlib.md5(f"{title}:{artist}".encode("utf-8", errors="ignore")).hexdigest()[:12]
+    _LYRICS_CACHE[key] = {
+        "title": title,
+        "artist": artist,
+        "lyrics": lyrics,
+    }
+    if len(_LYRICS_CACHE) > 500:
+        first_key = next(iter(_LYRICS_CACHE))
+        _LYRICS_CACHE.pop(first_key, None)
+    return key
+
+
+def get_cached_lyrics(key: str):
+    """Retrieve cached lyrics payload by key."""
+    return _LYRICS_CACHE.get(key)
 
 
 def main_menu_keyboard() -> InlineKeyboardMarkup:
@@ -21,11 +44,14 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
 
 def platforms_menu_keyboard() -> InlineKeyboardMarkup:
     """Keyboard for exploring supported platforms."""
-    markup = InlineKeyboardMarkup(row_width=3)
+    markup = InlineKeyboardMarkup(row_width=2)
     markup.add(
         InlineKeyboardButton("📻 Radio Javan", callback_data="ui_plat_rj"),
         InlineKeyboardButton("☁️ SoundCloud", callback_data="ui_plat_sc"),
+    )
+    markup.add(
         InlineKeyboardButton("🟢 Spotify", callback_data="ui_plat_sp"),
+        InlineKeyboardButton("🔴 YouTube Music", callback_data="ui_plat_yt"),
     )
     markup.add(
         InlineKeyboardButton("🔙 Back to Main Menu", callback_data="ui_main"),
@@ -52,17 +78,18 @@ def back_to_main_keyboard() -> InlineKeyboardMarkup:
 
 def audio_action_keyboard(track: TrackInfo) -> InlineKeyboardMarkup:
     """Action buttons attached directly below delivered audio messages."""
-    markup = InlineKeyboardMarkup(row_width=2)
-    buttons = []
+    markup = InlineKeyboardMarkup(row_width=1)
+
+    # Interactive full lyrics button
+    if track.lyrics:
+        lyr_id = store_lyrics(track.title or "Track", track.artist or "Artist", track.lyrics)
+        markup.add(InlineKeyboardButton("📝 متن کامل ترانه (Full Lyrics)", callback_data=f"lyr_{lyr_id}"))
 
     # Direct source link
     if track.share_url:
-        buttons.append(InlineKeyboardButton("🔗 Listen on Source", url=str(track.share_url)))
+        markup.add(InlineKeyboardButton("🔗 Listen on Source", url=str(track.share_url)))
     elif track.download_url and str(track.download_url).startswith("http"):
-        buttons.append(InlineKeyboardButton("🔗 Direct Link", url=str(track.download_url)))
-
-    if buttons:
-        markup.add(*buttons)
+        markup.add(InlineKeyboardButton("🔗 Direct Link", url=str(track.download_url)))
 
     return markup
 

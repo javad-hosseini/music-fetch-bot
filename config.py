@@ -31,6 +31,9 @@ SPOTIPY_CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET", "").strip()
 # SoundCloud client ID (optional, dynamic scraping used if not provided)
 SOUNDCLOUD_CLIENT_ID = os.getenv("SOUNDCLOUD_CLIENT_ID", "").strip()
 
+# Genius API token (optional, LRCLIB used as zero-credential fallback)
+GENIUS_ACCESS_TOKEN = os.getenv("GENIUS_ACCESS_TOKEN", "").strip()
+
 # Proxy configuration (optional, for Telegram API, yt-dlp, and streaming)
 # Supports PROXY_URL from .env or standard HTTP_PROXY/HTTPS_PROXY/ALL_PROXY
 raw_proxy = (
